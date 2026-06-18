@@ -1,0 +1,2 @@
+// Placeholder — GROQ grammar definition will be moved to StreamLanguage
+// in groq-language.ts. Lezer grammar deferred to a later phase.

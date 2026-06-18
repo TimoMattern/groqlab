@@ -1,0 +1,116 @@
+.cm-editor {
+  height: 100%;
+  font-size: 14px;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.cm-editor .cm-scroller {
+  overflow: auto;
+  font-family: monospace;
+}
+
+.cm-editor.cm-focused {
+  outline: none;
+}
+
+.cm-editor .cm-gutters {
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+}
+
+.cm-editor .cm-activeLineGutter {
+  background: transparent;
+}
+
+.cm-editor .cm-activeLine {
+  background: color-mix(in oklch, var(--muted) 50%, transparent);
+}
+
+.cm-editor .cm-cursor {
+  border-left-color: var(--foreground);
+}
+
+.cm-editor .cm-selectionBackground,
+.cm-editor.cm-focused .cm-selectionBackground {
+  background: var(--muted) !important;
+}
+
+.cm-editor .cm-matchingBracket {
+  background: color-mix(in oklch, var(--primary) 25%, transparent);
+  outline: 1px solid var(--primary);
+}
+
+.cm-editor .cm-nonmatchingBracket {
+  background: color-mix(in oklch, var(--destructive) 20%, transparent);
+}
+
+.cm-editor .cm-tooltip {
+  border: 1px solid var(--border);
+  background: var(--card);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.cm-editor .cm-tooltip-autocomplete {
+  font-family: monospace;
+}
+
+.cm-editor .cm-tooltip-autocomplete ul {
+  font-family: monospace;
+}
+
+.cm-editor .cm-tooltip-autocomplete ul li {
+  padding: 2px 4px;
+}
+
+.cm-editor .cm-tooltip-autocomplete ul li[aria-selected] {
+  background: color-mix(in oklch, var(--primary) 30%, transparent);
+  color: var(--foreground);
+}
+
+.cm-editor .cm-tooltip-autocomplete ul li[aria-selected] .cm-completionDetail {
+  color: var(--accent-foreground);
+  opacity: 0.7;
+}
+
+.cm-editor .cm-completionLabel {
+  font-weight: 500;
+}
+
+.cm-editor .cm-completionDetail {
+  font-style: italic;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
+.cm-editor .cm-completionMatchedText {
+  text-decoration: underline;
+  font-weight: 700;
+}
+
+.cm-editor .cm-completionIcon {
+  font-size: 12px;
+  line-height: 1;
+  margin-right: 2px;
+}
+
+.cm-editor .cm-completionIcon-function::after {
+  content: "ƒ";
+  font-weight: bold;
+}
+
+.cm-editor .cm-completionIcon-keyword::after {
+  content: "K";
+  font-weight: bold;
+}
+
+.cm-editor .cm-completionIcon-constant::after {
+  content: "C";
+  font-weight: bold;
+}
+
+.cm-editor .cm-completionIcon-text::after {
+  content: "T";
+  font-weight: bold;
+}

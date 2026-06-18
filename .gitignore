@@ -1,0 +1,13 @@
+.idea
+node_modules/
+dist/
+src-tauri/target/
+.vite/
+.next/
+*.log
+.DS_Store
+.env
+.env.local
+.env.*.local
+*.tsbuildinfo
+coverage/
