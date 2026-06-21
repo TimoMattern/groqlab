@@ -1,0 +1,444 @@
+[
+  {
+    "id": "root-empty",
+    "name": "empty query returns null (no explicit trigger)",
+    "query": "",
+    "cursor": 0,
+    "expected": [],
+    "context": "root",
+    "priority": "core",
+    "explicit": false
+  },
+  {
+    "id": "pipeline-explicit-trigger",
+    "name": "explicit trigger shows pipeline completions",
+    "query": "* | ",
+    "cursor": 4,
+    "expected": ["order()", "filter()", "project()"],
+    "context": "pipeline",
+    "priority": "core",
+    "explicit": true
+  },
+  {
+    "id": "root-star-snippet",
+    "name": "star at root shows snippets",
+    "query": "*",
+    "cursor": 1,
+    "expected": ["*[_type == \"\"]"],
+    "context": "root",
+    "priority": "core"
+  },
+  {
+    "id": "pipeline-partial-ord",
+    "name": "partial keyword 'ord' in pipeline returns order()",
+    "query": "* | ord",
+    "cursor": 6,
+    "expected": ["order()"],
+    "context": "pipeline",
+    "priority": "core"
+  },
+  {
+    "id": "root-partial-count-star",
+    "name": "partial 'coun' returns count()",
+    "query": "coun",
+    "cursor": 4,
+    "expected": ["count()"],
+    "context": "root",
+    "priority": "core"
+  },
+  {
+    "id": "filter-partial-in",
+    "name": "partial 'in' inside filter",
+    "query": "*[_type i",
+    "cursor": 9,
+    "expected": ["in"],
+    "context": "filter",
+    "priority": "core"
+  },
+  {
+    "id": "filter-no-match-fallback",
+    "name": "unmatched partial shows fallback items",
+    "query": "*[_type == \"post\" && zz",
+    "cursor": 23,
+    "expected": ["@", "^"],
+    "context": "filter",
+    "priority": "core"
+  },
+  {
+    "id": "filter-operator-and",
+    "name": "filter context shows and operator",
+    "query": "*[_type == \"post\" && ",
+    "cursor": 21,
+    "expected": ["@"],
+    "context": "filter",
+    "priority": "core"
+  },
+  {
+    "id": "string-value-type-name",
+    "name": "inside _type string suggests type names",
+    "query": "*[_type == \"mov",
+    "cursor": 15,
+    "expected": ["\"movie\""],
+    "context": "string-value",
+    "priority": "core",
+    "schema": [
+      {
+        "name": "movie",
+        "title": "Movie",
+        "fields": [{ "name": "title", "type": "string", "isArray": false, "isReference": false }]
+      }
+    ]
+  },
+  {
+    "id": "projection-field-title",
+    "name": "type-specific field ranks before common fields",
+    "query": "*[_type == \"movie\"]{",
+    "cursor": 20,
+    "expected": ["title"],
+    "context": "projection",
+    "priority": "core",
+    "schema": [
+      {
+        "name": "movie",
+        "title": "Movie",
+        "fields": [{ "name": "title", "type": "string", "isArray": false, "isReference": false }]
+      }
+    ]
+  },
+  {
+    "id": "projection-common-fields",
+    "name": "projection includes common fields after type-specific",
+    "query": "*[_type == \"movie\"]{",
+    "cursor": 20,
+    "expected": ["title"],
+    "context": "projection",
+    "priority": "core",
+    "schema": [
+      {
+        "name": "movie",
+        "title": "Movie",
+        "fields": [{ "name": "title", "type": "string", "isArray": false, "isReference": false }]
+      }
+    ]
+  },
+  {
+    "id": "pipeline-stages",
+    "name": "pipeline shows stage completions",
+    "query": "* | ",
+    "cursor": 4,
+    "expected": ["order()", "filter()", "project()"],
+    "context": "pipeline",
+    "priority": "core"
+  },
+  {
+    "id": "order-arg-asc",
+    "name": "order arg shows asc/desc",
+    "query": "* | order(title ",
+    "cursor": 16,
+    "expected": ["asc", "desc"],
+    "context": "order-arg",
+    "priority": "core"
+  },
+  {
+    "id": "score-arg-boost",
+    "name": "score arg shows boost and field completions",
+    "query": "* | score(",
+    "cursor": 10,
+    "expected": ["boost(condition, n)"],
+    "context": "score-arg",
+    "priority": "core"
+  },
+  {
+    "id": "select-arg-cases",
+    "name": "select arg shows => snippet",
+    "query": "* | select(",
+    "cursor": 11,
+    "expected": [" => \"\""],
+    "context": "select-arg",
+    "priority": "core"
+  },
+  {
+    "id": "namespace-sanity",
+    "name": "sanity:: namespace functions",
+    "query": "sanity::dat",
+    "cursor": 10,
+    "expected": ["sanity::dataset()"],
+    "context": "namespace",
+    "priority": "core"
+  },
+  {
+    "id": "namespace-geo",
+    "name": "geo:: namespace functions",
+    "query": "geo::dist",
+    "cursor": 8,
+    "expected": ["geo::distance()"],
+    "context": "namespace",
+    "priority": "core"
+  },
+  {
+    "id": "namespace-array",
+    "name": "array:: namespace functions",
+    "query": "array::jo",
+    "cursor": 8,
+    "expected": ["array::join()"],
+    "context": "namespace",
+    "priority": "core"
+  },
+  {
+    "id": "param-completion",
+    "name": "param shows $ variables",
+    "query": "*[_type == \"post\"] | order(title) | filter($",
+    "cursor": 44,
+    "expected": ["$start", "$end", "$limit"],
+    "context": "param",
+    "priority": "core"
+  },
+  {
+    "id": "negation-operator",
+    "name": "negation shows ! operator completions",
+    "query": "*[_type == \"post\" && !",
+    "cursor": 22,
+    "expected": ["defined()"],
+    "context": "negation",
+    "priority": "core"
+  },
+  {
+    "id": "filter-operator-and-2",
+    "name": "filter shows @ after &&",
+    "query": "*[price > 10 && ",
+    "cursor": 16,
+    "expected": ["@"],
+    "context": "filter",
+    "priority": "core"
+  },
+  {
+    "id": "object-projection-author",
+    "name": "object projection shows author field",
+    "query": "*[_type == \"movie\"]{title, author.}",
+    "cursor": 32,
+    "expected": ["author"],
+    "context": "projection",
+    "priority": "core",
+    "schema": [
+      {
+        "name": "movie",
+        "title": "Movie",
+        "fields": [
+          { "name": "title", "type": "string", "isArray": false, "isReference": false },
+          { "name": "author", "type": "object", "isArray": false, "isReference": false }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "geo-arg-distance",
+    "name": "geo::distance() arg shows geospatial field suggestions",
+    "query": "* | score(geo::distance(",
+    "cursor": 24,
+    "expected": ["geoPoint"],
+    "context": "geo-arg",
+    "priority": "edge",
+    "schema": [
+      {
+        "name": "place",
+        "title": "Place",
+        "fields": [{ "name": "location", "type": "geopoint", "isArray": false, "isReference": false }]
+      }
+    ]
+  },
+  {
+    "id": "release-arg-versionof",
+    "name": "sanity::versionOf() arg shows document ID placeholder",
+    "query": "* | score(sanity::versionOf(",
+    "cursor": 28,
+    "expected": ["\"document-id\""],
+    "context": "release-arg",
+    "priority": "edge",
+    "schema": [
+      {
+        "name": "movie",
+        "title": "Movie",
+        "fields": [{ "name": "title", "type": "string", "isArray": false, "isReference": false }]
+      }
+    ]
+  },
+  {
+    "id": "string-placeholder",
+    "name": "string value with placeholders shows locale",
+    "query": "*[lang == \"e",
+    "cursor": 12,
+    "expected": ["\"en\""],
+    "context": "string-value",
+    "priority": "edge",
+    "schema": []
+  },
+  {
+    "id": "array-traversal-arrow",
+    "name": "array traversal shows -> dereference",
+    "query": "*[_type == \"movie\"]{castMembers[]",
+    "cursor": 33,
+    "expected": ["->"],
+    "context": "array-traversal",
+    "priority": "core",
+    "schema": [
+      {
+        "name": "movie",
+        "title": "Movie",
+        "fields": [{ "name": "castMembers", "type": "array", "isArray": true, "isReference": false }]
+      }
+    ]
+  },
+  {
+    "id": "collate-arg-locale",
+    "name": "collate arg shows locale completions",
+    "query": "* | order(title collate ",
+    "cursor": 23,
+    "expected": ["\"en\"", "\"de\"", "\"fr\""],
+    "context": "collate-arg",
+    "priority": "edge"
+  },
+  {
+    "id": "glob-completion",
+    "name": "glob wildcard completions",
+    "query": "*[_type == \"drafts.",
+    "cursor": 19,
+    "expected": ["\"drafts.*\""],
+    "context": "string-value",
+    "priority": "edge",
+    "schema": []
+  },
+  {
+    "id": "root-object-new",
+    "name": "root object completion shows snippets",
+    "query": "{\n  ",
+    "cursor": 4,
+    "expected": ["..."],
+    "context": "root-object",
+    "priority": "edge"
+  },
+  {
+    "id": "select-with-boost",
+    "name": "select shows condition => value snippet first",
+    "query": "*[select(",
+    "cursor": 9,
+    "expected": [" => \"\""],
+    "context": "select-arg",
+    "priority": "edge"
+  },
+  {
+    "id": "projection-at-scope",
+    "name": "projection shows @ after comma",
+    "query": "*[_type == \"movie\"]{title, @.",
+    "cursor": 29,
+    "expected": ["title"],
+    "context": "projection",
+    "priority": "core",
+    "schema": [
+      {
+        "name": "movie",
+        "title": "Movie",
+        "fields": [{ "name": "title", "type": "string", "isArray": false, "isReference": false }]
+      }
+    ]
+  },
+  {
+    "id": "post-projection-slice",
+    "name": "post-projection slice completions",
+    "query": "*[_type == \"movie\"]{title}[",
+    "cursor": 27,
+    "expected": ["0"],
+    "context": "post-projection-slice",
+    "priority": "edge"
+  },
+  {
+    "id": "filter-references-paren",
+    "name": "references() shows parent ref completions",
+    "query": "*[_type == \"movie\" && references(",
+    "cursor": 33,
+    "expected": ["^._id"],
+    "context": "join-filter",
+    "priority": "core"
+  },
+  {
+    "id": "single-quote-context",
+    "name": "single-quoted string context still works",
+    "query": "*[_type == 'mov",
+    "cursor": 15,
+    "expected": ["\"movie\""],
+    "context": "string-value",
+    "priority": "core",
+    "schema": [
+      {
+        "name": "movie",
+        "title": "Movie",
+        "fields": [{ "name": "title", "type": "string", "isArray": false, "isReference": false }]
+      }
+    ]
+  },
+  {
+    "id": "root-after-count-paren",
+    "name": "after count( shows *[_type == \"\"] snippet first",
+    "query": "count(",
+    "cursor": 6,
+    "expected": ["*[_type == \"\"]"],
+    "context": "root",
+    "priority": "core"
+  },
+  {
+    "id": "concat-rhs-completion",
+    "name": "concat rhs shows * subquery first",
+    "query": "*[_type == \"movie\"]{title} + ",
+    "cursor": 29,
+    "expected": ["*"],
+    "context": "concat-rhs",
+    "priority": "edge"
+  },
+  {
+    "id": "projection-array-deref-person",
+    "name": "field[] in projection resolves array element type's fields",
+    "query": "*[_type == \"movie\"]{castMembers[].",
+    "cursor": 34,
+    "expected": ["name", "email"],
+    "context": "deref",
+    "priority": "edge",
+    "schema": [
+      {
+        "name": "movie",
+        "title": "Movie",
+        "fields": [{ "name": "castMembers", "type": "person", "isArray": true, "isReference": true }]
+      },
+      {
+        "name": "person",
+        "title": "Person",
+        "fields": [
+          { "name": "name", "type": "string", "isArray": false, "isReference": false },
+          { "name": "email", "type": "string", "isArray": false, "isReference": false }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "projection-array-deref-alias",
+    "name": "aliased field[] in projection resolves array element type's fields",
+    "query": "*[_type == \"movie\"]{'cast': castMembers[].",
+    "cursor": 42,
+    "expected": ["name", "email"],
+    "context": "deref",
+    "priority": "edge",
+    "schema": [
+      {
+        "name": "movie",
+        "title": "Movie",
+        "fields": [{ "name": "castMembers", "type": "person", "isArray": true, "isReference": true }]
+      },
+      {
+        "name": "person",
+        "title": "Person",
+        "fields": [
+          { "name": "name", "type": "string", "isArray": false, "isReference": false },
+          { "name": "email", "type": "string", "isArray": false, "isReference": false }
+        ]
+      }
+    ]
+  }
+]

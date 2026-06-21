@@ -197,6 +197,27 @@ export async function POST(request: NextRequest) {
             f.type = fuzzyMatch.name;
             f.isReference = true;
           }
+        } else if (f.type === "array" && f.isArray) {
+          // Array with unknown element type (empty array in sample).
+          // Try matching field name (or its singular form) to a known type name.
+          const singular = f.name.endsWith("s") ? f.name.slice(0, -1) : f.name;
+          let arrMatch = knownTypeNames.has(f.name)
+            ? types.find((ot) => ot.name === f.name)
+            : undefined;
+          if (!arrMatch) {
+            arrMatch = types.find((ot) => ot.name === singular);
+          }
+          if (!arrMatch) {
+            arrMatch = types.find((ot) => {
+              const seg = ot.name.split(".").pop() || "";
+              return seg.toLowerCase() === f.name.toLowerCase() ||
+                     seg.toLowerCase() === singular.toLowerCase();
+            });
+          }
+          if (arrMatch) {
+            f.type = arrMatch.name;
+            // Keep isArray: true, don't set isReference — the elements may not be refs
+          }
         } else if (f.isReference && !knownTypeNames.has(f.type)) {
           // Resolved type doesn't match any known type — likely an ID fragment
           // was used as _type on the reference object. Try field-name matching.

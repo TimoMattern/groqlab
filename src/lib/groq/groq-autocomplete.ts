@@ -344,9 +344,77 @@ function skipStringAndParen(s: string): string {
   return out;
 }
 
+// ─── Array type resolver ──────────────────────────────────────────────────────
+
+function resolveArrayFieldType(
+  field: SchemaField,
+): CompletionCtx | undefined {
+  if (!field.isArray) return undefined;
+
+  if (field.isReference) {
+    const targetType = resolveFieldTargetType(field, field.name);
+    if (targetType) return { kind: "deref", typeName: targetType.name };
+  }
+  if (field.fields) {
+    return {
+      kind: "object-projection",
+      fields: field.fields.map((f) => ({ name: f.name, type: fieldDetail(f) })),
+    };
+  }
+  // Fallback: try resolving field.type as a type name
+  if (field.type && field.type !== "array" && field.type !== "reference") {
+    const elementType = findType(field.type);
+    if (elementType) {
+      return { kind: "deref", typeName: elementType.name };
+    }
+  }
+  // Convention fallback: if field name matches a type name, use it as element type
+  // This handles cases where schema inference produced "array" type (empty/incomplete data)
+  const byName = resolveTypeName(field.name);
+  if (byName) {
+    return { kind: "deref", typeName: byName.name };
+  }
+  return undefined;
+}
+
 // ─── Context detection ───────────────────────────────────────────────────────
 
-function detectContext(before: string): CompletionCtx {
+function resolveProjectionWithArrayDeref(
+  typeName: string,
+  afterBrace: string,
+  before: string,
+): CompletionCtx {
+  const resolvedType = findType(typeName);
+  if (!resolvedType) return { kind: "projection", typeName, before };
+
+  // Check for field[]-> deref
+  const arrDerefArrow = afterBrace.match(
+    /(?:['"]?\w+['"]?\s*:\s*)?(\w+)\[\]\s*->/,
+  );
+  if (arrDerefArrow) {
+    const field = resolvedType.fields.find((f) => f.name === arrDerefArrow[1]);
+    if (field) {
+      const resolved = resolveArrayFieldType(field);
+      if (resolved) return resolved;
+    }
+    return { kind: "projection", typeName, before };
+  }
+
+  // Check for field[]. access
+  const arrDeref = afterBrace.match(
+    /(?:['"]?\w+['"]?\s*:\s*)?(\w+)\[\]\./,
+  );
+  if (arrDeref) {
+    const field = resolvedType.fields.find((f) => f.name === arrDeref[1]);
+    if (field) {
+      const resolved = resolveArrayFieldType(field);
+      if (resolved) return resolved;
+    }
+  }
+  return { kind: "projection", typeName, before };
+}
+
+export function detectContext(before: string): CompletionCtx {
   const trimmed = before.trimEnd();
 
   // 1. Inside comment
@@ -427,12 +495,7 @@ function detectContext(before: string): CompletionCtx {
     return { kind: "order-arg", before };
   }
 
-  // 9. Inside score()
-  if (/score\(\s*([^)]*)$/.test(before) && parenDepth(before) > 0) {
-    return { kind: "score-arg" };
-  }
-
-  // 10. geo:: functions
+  // 9. geo:: functions — checked BEFORE score() so nested calls inside score() resolve correctly
   for (const fn of ["geo::distance", "geo::contains", "geo::intersects"]) {
     const re = new RegExp(fn + "\\(");
     if (re.test(before) && parenDepth(before) > 0) {
@@ -445,16 +508,21 @@ function detectContext(before: string): CompletionCtx {
     }
   }
 
+  // 10. sanity::versionOf / sanity::partOfRelease — checked BEFORE score() for nesting
+  for (const fn of ["sanity::versionOf", "sanity::partOfRelease"]) {
+    if ((new RegExp(fn + "\\(").test(before) && parenDepth(before) > 0) || before.endsWith(fn)) {
+      return { kind: "release-arg", fn };
+    }
+  }
+
   // 11. pt::text()
   if ((/pt::text\(\s*([^)]*)$/.test(before) && parenDepth(before) > 0) || before.endsWith("pt::text")) {
     return { kind: "pt-text-arg" };
   }
 
-  // 12. sanity::versionOf / sanity::partOfRelease
-  for (const fn of ["sanity::versionOf", "sanity::partOfRelease"]) {
-    if ((new RegExp(fn + "\\(").test(before) && parenDepth(before) > 0) || before.endsWith(fn)) {
-      return { kind: "release-arg", fn };
-    }
+  // 12. Inside score()
+  if (/score\(\s*([^)]*)$/.test(before) && parenDepth(before) > 0) {
+    return { kind: "score-arg" };
   }
 
   // 13. namespace :: after (checked after function-specific namespace checks)
@@ -555,11 +623,11 @@ function detectContext(before: string): CompletionCtx {
       // Normal projection: resolve type from _type filter
       const exactMatch = textBeforeBrace.match(/_type\s*==\s*([""'])([^"']+)\1\s*\]\s*$/);
       if (exactMatch) {
-        return { kind: "projection", typeName: exactMatch[2], before };
+        return resolveProjectionWithArrayDeref(exactMatch[2], afterBrace, before);
       }
       const inMatch = textBeforeBrace.match(/_type\s+in\s+\[([""'])([^"']+)\1\]\s*\]\s*$/);
       if (inMatch) {
-        return { kind: "projection", typeName: inMatch[2], before };
+        return resolveProjectionWithArrayDeref(inMatch[2], afterBrace, before);
       }
 
       // After "alias": inside projection — check if we're after a colon
@@ -575,6 +643,30 @@ function detectContext(before: string): CompletionCtx {
         if (subFields) {
           return { kind: "object-projection", fields: subFields };
         }
+      }
+
+      // Check for field[]. inside projection without type filter — resolve array element type
+      const lastArrDot = (() => {
+        const idx = afterBrace.lastIndexOf("[]");
+        if (idx < 0 || idx + 2 >= afterBrace.length) return null;
+        if (afterBrace[idx + 2] !== ".") return null;
+        const beforeField = afterBrace.slice(0, idx).trimEnd();
+        const afterColon = beforeField.lastIndexOf(":") >= 0
+          ? beforeField.slice(beforeField.lastIndexOf(":") + 1).trim()
+          : beforeField;
+        const m = afterColon.match(/(\w[\w]*)$/);
+        return m ? m[1] : null;
+      })();
+      if (lastArrDot) {
+        for (const t of getSchemaTypes()) {
+          const field = t.fields.find((f) => f.name === lastArrDot);
+          if (field && field.isArray) {
+            const resolved = resolveArrayFieldType(field);
+            if (resolved) return resolved;
+          }
+        }
+        // Fallback: show all fields from all types
+        return { kind: "projection", before };
       }
 
       // Check if it's a batched query (root { without leading filter)
@@ -736,8 +828,8 @@ function filterCompletions(before: string, query: string): Completion[] {
     }
   }
 
-  out.push({ label: "@", type: "atom" as const, detail: "Current value", boost: 95, apply: "@" });
-  out.push({ label: "^", type: "atom" as const, detail: "Parent reference", boost: 95, apply: "^" });
+    out.push({ label: "@", type: "atom" as const, detail: "Current value", boost: 97, apply: "@" });
+    out.push({ label: "^", type: "atom" as const, detail: "Parent reference", boost: 97, apply: "^" });
   out.push({ label: "!", type: "operator" as const, detail: "Logical NOT", boost: 90, apply: "!" });
   out.push({ label: "*", type: "atom" as const, detail: "All documents subquery", boost: 80, apply: "*" });
 
@@ -748,16 +840,70 @@ function stringValueCompletions(before: string, query: string): Completion[] {
   const types = getSchemaTypes();
   const out: Completion[] = [];
 
-  for (const t of types) {
-    const quoted = `"${t.name}"`;
-    if (!query || quoted.toLowerCase().includes(query)) {
-      out.push({
-        label: quoted,
-        type: "type",
-        detail: t.title ?? t.name,
-        boost: 99,
-        apply: t.name,
-      });
+  // Detect if this looks like a _type comparison string (e.g. _type == "...")
+  const isTypeComparison = /_type\s*==\s*["'][^"']*$/.test(before) || /_type\s+in\s+\[["'][^"']*$/.test(before);
+
+  if (isTypeComparison) {
+    // Offer type names
+    for (const t of types) {
+      const quoted = `"${t.name}"`;
+      if (!query || quoted.toLowerCase().includes(query)) {
+        out.push({
+          label: quoted,
+          type: "type",
+          detail: t.title ?? t.name,
+          boost: 99,
+          apply: t.name,
+        });
+      }
+    }
+    // Globs are very relevant in type comparisons (e.g. "drafts.*")
+    for (const c of GLOB_COMPLETIONS) {
+      if (!query || c.label.toLowerCase().includes(query)) {
+        out.push({
+          label: c.label,
+          type: c.type === CompletionKind.Glob ? "keyword" : c.type,
+          detail: c.detail,
+          apply: c.apply ?? c.label,
+          boost: 95,
+        });
+      }
+    }
+    // Locales are less relevant in type comparisons
+    for (const c of LOCALE_COMPLETIONS) {
+      if (!query || c.label.toLowerCase().includes(query)) {
+        out.push({
+          label: c.label,
+          type: c.type === CompletionKind.Locale ? "keyword" : c.type,
+          detail: c.detail,
+          apply: c.apply ?? c.label,
+          boost: 80,
+        });
+      }
+    }
+  } else {
+    // Non-type strings: locales first, then globs
+    for (const c of LOCALE_COMPLETIONS) {
+      if (!query || c.label.toLowerCase().includes(query)) {
+        out.push({
+          label: c.label,
+          type: c.type === CompletionKind.Locale ? "keyword" : c.type,
+          detail: c.detail,
+          apply: c.apply ?? c.label,
+          boost: 90,
+        });
+      }
+    }
+    for (const c of GLOB_COMPLETIONS) {
+      if (!query || c.label.toLowerCase().includes(query)) {
+        out.push({
+          label: c.label,
+          type: c.type === CompletionKind.Glob ? "keyword" : c.type,
+          detail: c.detail,
+          apply: c.apply ?? c.label,
+          boost: 85,
+        });
+      }
     }
   }
 
@@ -765,12 +911,42 @@ function stringValueCompletions(before: string, query: string): Completion[] {
 }
 
 function projectionCompletions(typeName: string | undefined, before: string, query: string): Completion[] {
-  const fields = typeName ? fieldsForType(typeName) : allFields();
-  const out: Completion[] = makeFieldCompletions(fields, query, 98);
+  const out: Completion[] = [];
+
+  if (typeName) {
+    const t = findType(typeName);
+    if (t) {
+      // Common fields get 98
+      for (const f of COMMON_FIELDS) {
+        if (!query || f.name.toLowerCase().includes(query)) {
+          out.push({ label: f.name, type: "keyword", detail: f.type, boost: 98, apply: f.name });
+        }
+      }
+      // Type-specific fields get 99 (they're the primary reason the type was resolved)
+      for (const f of t.fields) {
+        const detail = fieldDetail(f);
+        if (!query || f.name.toLowerCase().includes(query)) {
+          out.push({ label: f.name, type: "keyword", detail, boost: 99, apply: f.name });
+        }
+      }
+    } else {
+      out.push(...makeFieldCompletions(allFields(), query, 98));
+    }
+  } else {
+    out.push(...makeFieldCompletions(allFields(), query, 98));
+  }
 
   // Spread
   if (!query || "...".includes(query)) {
     out.push({ label: "...", type: "keyword", detail: "Spread all attributes", boost: 95, apply: "..." });
+  }
+
+  // Current/parent references
+  if (!query || "@".includes(query)) {
+    out.push({ label: "@", type: "atom", detail: "Current value", boost: 97, apply: "@" });
+  }
+  if (!query || "^".includes(query)) {
+    out.push({ label: "^", type: "atom", detail: "Parent reference", boost: 97, apply: "^" });
   }
 
   // Computed field functions
@@ -858,6 +1034,7 @@ function selectArgCompletions(before: string, query: string): Completion[] {
 
   // Before => — suggest conditions
   out.push({ label: ' => ""', type: "operator", detail: "Condition then value", boost: 95, apply: ' => "${1}"${0}' });
+  out.push({ label: "defined()", type: "function", detail: "Check if field exists", boost: 93, apply: "defined(${1})${0}" });
   out.push(...makeStaticCompletions(
     OPERATOR_COMPLETIONS.filter((o) => ["==", "!=", "<", "<=", ">", ">=", "&&", "||"].includes(o.label)),
     query,
@@ -872,8 +1049,27 @@ function selectArgCompletions(before: string, query: string): Completion[] {
 }
 
 function derefCompletions(typeName: string, query: string): Completion[] {
-  const fields = fieldsForType(typeName);
-  return makeFieldCompletions(fields, query, 98);
+  const t = findType(typeName);
+  const out: Completion[] = [];
+
+  // Common fields get 98
+  for (const f of COMMON_FIELDS) {
+    if (!query || f.name.toLowerCase().includes(query)) {
+      out.push({ label: f.name, type: "keyword", detail: f.type, boost: 98, apply: f.name });
+    }
+  }
+
+  // Type-specific fields get 99 (they're the primary reason the type was resolved)
+  if (t) {
+    for (const f of t.fields) {
+      const detail = fieldDetail(f);
+      if (!query || f.name.toLowerCase().includes(query)) {
+        out.push({ label: f.name, type: "keyword", detail, boost: 99, apply: f.name });
+      }
+    }
+  }
+
+  return out;
 }
 
 function dotAccessCompletions(typeName: string | undefined, query: string): Completion[] {
@@ -1022,6 +1218,9 @@ function batchKeyCompletions(query: string): Completion[] {
 
 function rootObjectCompletions(query: string): Completion[] {
   const out: Completion[] = [];
+  if (!query || ".".includes(query)) {
+    out.push({ label: "...", type: "keyword", detail: "Spread all attributes", boost: 96, apply: "..." });
+  }
   if (!query || '"name":'.includes(query)) {
     out.push({ label: '"name": ', type: "keyword", detail: "Computed property", boost: 95, apply: '"${1}": ${0}' });
   }
@@ -1047,6 +1246,9 @@ function atSubfilterCompletions(query: string): Completion[] {
 
 function postProjectionSliceCompletions(query: string): Completion[] {
   const out: Completion[] = [];
+  if (!query || "0".includes(query)) {
+    out.push({ label: "0", type: "literal", detail: "Single element access", boost: 96, apply: "0" });
+  }
   if (!query || "0..".includes(query)) {
     out.push({ label: "0..", type: "keyword", detail: "Inclusive range start", boost: 95, apply: "0.." });
   }
@@ -1070,6 +1272,9 @@ function postProjectionSliceCompletions(query: string): Completion[] {
 
 function concatRhsCompletions(query: string): Completion[] {
   const out: Completion[] = [];
+  if (!query || "*".includes(query)) {
+    out.push({ label: "*", type: "atom", detail: "All documents subquery", boost: 96, apply: "*" });
+  }
   if (!query || "[".includes(query)) {
     out.push({ label: "[", type: "keyword", detail: "Array literal", boost: 90, apply: "[${1}]${0}" });
   }
@@ -1104,7 +1309,12 @@ function arrayTraversalCompletions(_before: string, query: string): Completion[]
 }
 
 function collateArgCompletions(query: string): Completion[] {
-  return makeStaticCompletions(LOCALE_COMPLETIONS, query);
+  const out = makeStaticCompletions(LOCALE_COMPLETIONS, query);
+  // If query doesn't match any locale (e.g. the word "collate" itself), show all
+  if (out.length === 0) {
+    return makeStaticCompletions(LOCALE_COMPLETIONS, "");
+  }
+  return out;
 }
 
 function objectProjectionCompletions(fields: { name: string; type: string }[], query: string): Completion[] {
@@ -1143,8 +1353,8 @@ export function groqCompletionSource(
   switch (ctx.kind) {
     case "root": {
       if (!word && !explicit) {
-        // Still show on '*' typed
-        if (!before.trim().endsWith("*")) return null;
+        // Still show on '*' or '(' typed (function call opened)
+        if (!before.trim().endsWith("*") && !before.trim().endsWith("(")) return null;
       }
       options = rootCompletions(query);
       break;
@@ -1319,6 +1529,6 @@ export function groqCompletionSource(
   return {
     from,
     options,
-    validFor: /^[a-zA-Z_*@^$][a-zA-Z0-9_$-]*$/u,
+    validFor: /^$|^[a-zA-Z_*@^$][a-zA-Z0-9_$-]*$/u,
   };
 }

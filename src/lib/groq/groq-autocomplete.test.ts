@@ -1047,27 +1047,6 @@ describe("groq-autocomplete", () => {
   });
 
   describe("join / subquery context", () => {
-    function setupWithPersonType() {
-      const conn = makeConn("join1");
-      useConnectionStore.setState({ connections: [conn], activeId: "join1" });
-      useSchemaStore.getState().setTypes("join1", [
-        {
-          name: "movie",
-          title: "Movie",
-          fields: [
-            { name: "title", type: "string", isArray: false, isReference: false },
-          ],
-        },
-        {
-          name: "person",
-          title: "Person",
-          fields: [
-            { name: "name", type: "string", isArray: false, isReference: false },
-          ],
-        },
-      ]);
-    }
-
     it("suggests ^._id inside references() in subquery", () => {
       const ctx = createContext(
         '*[_type == "person"]{"movies": *[_type == "movie" && references(',
@@ -1259,6 +1238,112 @@ describe("groq-autocomplete", () => {
         const labels = result.options.map((o) => o.label);
         expect(labels).toContain("_id");
         expect(labels).toContain("_type");
+      }
+    });
+  });
+
+  describe("array[] projection field suggestions", () => {
+    function setupWithRefArray() {
+      const conn = makeConn("arrproj");
+      useConnectionStore.setState({ connections: [conn], activeId: "arrproj" });
+      useSchemaStore.getState().setTypes("arrproj", [
+        {
+          name: "movie",
+          title: "Movie",
+          fields: [
+            { name: "title", type: "string", isArray: false, isReference: false },
+            {
+              name: "castMembers",
+              type: "person",
+              isArray: true,
+              isReference: true,
+            },
+          ],
+        },
+        {
+          name: "person",
+          title: "Person",
+          fields: [
+            { name: "name", type: "string", isArray: false, isReference: false },
+            { name: "bio", type: "string", isArray: false, isReference: false },
+          ],
+        },
+      ]);
+    }
+
+    it("suggests array element fields after castMembers[]. with type filter (correct inference)", () => {
+      setupWithRefArray();
+      const ctx = createContext(
+        '*[_type == "movie"]{"cast": castMembers[].',
+        '*[_type == "movie"]{"cast": castMembers[].'.length,
+      );
+      const result = groqCompletionSource(ctx);
+      expect(result).toBeTruthy();
+      if (result) {
+        const labels = result.options.map((o) => o.label);
+        expect(labels).toContain("name");
+        expect(labels).toContain("bio");
+        expect(labels).toContain("_id");
+      }
+    });
+
+    it("suggests array element fields after castMembers[]. with type filter no alias (correct inference)", () => {
+      setupWithRefArray();
+      const ctx = createContext(
+        '*[_type == "movie"]{castMembers[].',
+        '*[_type == "movie"]{castMembers[].'.length,
+      );
+      const result = groqCompletionSource(ctx);
+      expect(result).toBeTruthy();
+      if (result) {
+        const labels = result.options.map((o) => o.label);
+        expect(labels).toContain("name");
+        expect(labels).toContain("bio");
+      }
+    });
+
+    it("suggests array element fields after castMembers[]. with type filter and partial word", () => {
+      setupWithRefArray();
+      const ctx = createContext(
+        '*[_type == "movie"]{castMembers[].na',
+        '*[_type == "movie"]{castMembers[].na'.length,
+      );
+      const result = groqCompletionSource(ctx);
+      expect(result).toBeTruthy();
+      if (result) {
+        const labels = result.options.map((o) => o.label);
+        expect(labels).toContain("name");
+        expect(labels).not.toContain("bio");
+      }
+    });
+
+    it("suggests array element fields after castMembers[]. with no type filter and no alias", () => {
+      setupWithRefArray();
+      const ctx = createContext(
+        '{castMembers[].',
+        '{castMembers[].'.length,
+      );
+      const result = groqCompletionSource(ctx);
+      expect(result).toBeTruthy();
+      if (result) {
+        const labels = result.options.map((o) => o.label);
+        expect(labels).toContain("name");
+        expect(labels).toContain("bio");
+      }
+    });
+
+    it("suggests array element fields after castMembers[]. with no type filter but with alias", () => {
+      setupWithRefArray();
+      const ctx = createContext(
+        '{"cast": castMembers[].',
+        '{"cast": castMembers[].'.length,
+      );
+      const result = groqCompletionSource(ctx);
+      expect(result).toBeTruthy();
+      if (result) {
+        const labels = result.options.map((o) => o.label);
+        expect(labels).toContain("name");
+        expect(labels).toContain("bio");
       }
     });
   });

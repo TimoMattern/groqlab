@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "benchmark:autocomplete": "npx tsx scripts/benchmark-autocomplete.ts",
+    "benchmark:autocomplete:all": "npx tsx scripts/benchmark-autocomplete.ts --all --json"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
