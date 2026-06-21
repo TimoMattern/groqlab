@@ -66,20 +66,32 @@ interface DialogProps {
 ### Sidebar (`src/components/layout/Sidebar.tsx`)
 
 ```
-┌─────────────────────┐
-│  [Schema] [History]  │  ← tab buttons
-├─────────────────────┤
-│                     │
-│  Panel Content      │  ← children
-│  (schema or history) │
-│                     │
-├─────────────────────┤
-│  ConnectionList     │  ← sticky bottom area (rendered by parent)
-└─────────────────────┘
+┌────┬────────────────┐
+│    │                │
+│ 🔍 │  Panel Content │
+│    │  (varies by    │
+│ 🔌 │   active tab)  │
+│    │                │
+│ ⏰ │                │
+│    │                │
+└────┴────────────────┘
 ```
 
-- Fixed width: `w-60`
-- Tab buttons with active indicator (bottom border + primary color)
+- Vertical tab strip (40px) on the left with icon-only buttons
+- Content panel fills remaining width (sidebar total: 240px / `w-60`)
+- Three tabs: **Query** (schema browser), **Connections** (connection list), **History** (query history)
+- Active tab highlighted with `bg-[var(--muted)]` and `text-[var(--primary)]`
+- Each tab receives its own content via `children`
+
+```typescript
+export type SidebarTabId = "query" | "connections" | "history";
+
+interface SidebarProps {
+  activeTab: SidebarTabId;
+  onTabChange: (tab: SidebarTabId) => void;
+  children: ReactNode;
+}
+```
 
 ### Toolbar (`src/components/layout/Toolbar.tsx`)
 

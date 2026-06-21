@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { Sidebar, type SidebarTabId } from "@/components/layout/Sidebar";
 import { Toolbar } from "@/components/layout/Toolbar";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { ConnectionList } from "@/components/connection/ConnectionList";
@@ -19,7 +19,7 @@ import type { ConnectionConfig } from "@/lib/sanity-types";
 export default function Home() {
   const [showConnDialog, setShowConnDialog] = useState(false);
   const [editingConnection, setEditingConnection] = useState<ConnectionConfig | undefined>(undefined);
-  const [sidebarPanel, setSidebarPanel] = useState<"schema" | "history">("schema");
+  const [sidebarTab, setSidebarTab] = useState<SidebarTabId>("query");
   const [query, setQuery] = useState("");
   const { runQuery } = useQuery();
   const isLoading = useResultStore((s) => s.isLoading);
@@ -48,40 +48,21 @@ export default function Home() {
     <div className="flex h-screen flex-col overflow-hidden bg-[var(--background)]">
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-60 flex-shrink-0" data-testid="sidebar">
-          <Sidebar activePanel={sidebarPanel} onPanelChange={setSidebarPanel}>
-            {sidebarPanel === "schema" ? (
-              <div className="flex flex-col h-[90%]">
-                <SchemaPanel onInsert={handleInsert} />
-                <div className="mt-auto border-t border-[var(--border)] pt-3">
-                  <ConnectionList
-                    onAdd={() => {
-                      setEditingConnection(undefined);
-                      setShowConnDialog(true);
-                    }}
-                    onEdit={(conn) => {
-                      setEditingConnection(conn);
-                      setShowConnDialog(true);
-                    }}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-1 flex-col">
-                <HistoryPanel onReuse={handleReuseQuery} />
-                <div className="border-t border-[var(--border)] pt-3">
-                  <ConnectionList
-                    onAdd={() => {
-                      setEditingConnection(undefined);
-                      setShowConnDialog(true);
-                    }}
-                    onEdit={(conn) => {
-                      setEditingConnection(conn);
-                      setShowConnDialog(true);
-                    }}
-                  />
-                </div>
-              </div>
+          <Sidebar activeTab={sidebarTab} onTabChange={setSidebarTab}>
+            {sidebarTab === "query" && <SchemaPanel onInsert={handleInsert} />}
+            {sidebarTab === "connections" && (
+              <ConnectionList
+                onAdd={() => {
+                  setEditingConnection(undefined);
+                  setShowConnDialog(true);
+                }}
+                onEdit={(conn) => {
+                  setEditingConnection(conn);
+                  setShowConnDialog(true);
+                }}
+              />
             )}
+            {sidebarTab === "history" && <HistoryPanel onReuse={handleReuseQuery} />}
           </Sidebar>
         </aside>
 

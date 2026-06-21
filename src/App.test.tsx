@@ -23,9 +23,10 @@ beforeEach(() => {
 });
 
 describe("Home connection flow", () => {
-  it("lets users add their first connection from the default sidebar", () => {
+  it("lets users add their first connection from the sidebar", () => {
     render(<Home />);
 
+    fireEvent.click(screen.getByTestId("sidebar-tab-connections"));
     fireEvent.click(screen.getByTestId("add-connection"));
     fireEvent.change(screen.getByLabelText("Project ID"), {
       target: { value: "abc123" },
