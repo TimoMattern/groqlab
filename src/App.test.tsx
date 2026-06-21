@@ -33,6 +33,9 @@ describe("Home connection flow", () => {
     fireEvent.change(screen.getByLabelText("Dataset"), {
       target: { value: "production" },
     });
+    fireEvent.change(screen.getByLabelText("API Token"), {
+      target: { value: "sk-test-token" },
+    });
     fireEvent.click(screen.getByText("Save"));
 
     expect(useConnectionStore.getState().connections).toHaveLength(1);

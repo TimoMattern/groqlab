@@ -45,7 +45,7 @@ export async function fetchSchema(
   const response = await fetch("/api/schema", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ connection }),
+    body: JSON.stringify({ connection, token: connection.token }),
   });
 
   if (!response.ok) {
@@ -57,5 +57,8 @@ export async function fetchSchema(
   }
 
   const json = await response.json();
-  return json.types;
+  if (json.error) {
+    throw new Error(json.error);
+  }
+  return json.types ?? [];
 }

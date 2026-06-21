@@ -8,7 +8,13 @@ const STATUS_KEY_PREFIX = "groqlab:conn-status:";
 function loadConnections(): ConnectionConfig[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const conns: ConnectionConfig[] = raw ? JSON.parse(raw) : [];
+    for (const c of conns) {
+      if (!("token" in c)) {
+        (c as ConnectionConfig).token = "";
+      }
+    }
+    return conns;
   } catch {
     return [];
   }
@@ -21,6 +27,7 @@ function saveConnections(connections: ConnectionConfig[]) {
     // Storage full or unavailable — silently fail
   }
 }
+
 
 function loadActiveId(): string | null {
   try {

@@ -3,6 +3,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useConnections } from "@/hooks/useConnections";
+import { useSchema } from "@/hooks/useSchema";
 import type { ConnectionConfig } from "@/lib/sanity-types";
 
 interface ConnectionDialogProps {
@@ -13,33 +14,37 @@ interface ConnectionDialogProps {
 
 export function ConnectionDialog({ open, onClose, connection }: ConnectionDialogProps) {
   const { testConn, saveConnection, updateConnection, setActive } = useConnections();
+  const { loadSchema } = useSchema();
   const isEditing = !!connection;
 
   const [projectId, setProjectId] = useState("");
   const [dataset, setDataset] = useState("");
   const [name, setName] = useState("");
+  const [token, setToken] = useState("");
 
   const [testResult, setTestResult] = useState<{
     success: boolean;
     message: string;
   } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
-  const [errors, setErrors] = useState<{ projectId?: string; dataset?: string }>({});
+  const [errors, setErrors] = useState<{ projectId?: string; dataset?: string; token?: string }>({});
 
   useEffect(() => {
     if (open) {
       setProjectId(connection?.projectId ?? "");
       setDataset(connection?.dataset ?? "");
       setName(connection?.name ?? "");
+      setToken(connection?.token ?? "");
       setTestResult(null);
       setErrors({});
     }
   }, [open, connection]);
 
   function validate(): boolean {
-    const newErrors: { projectId?: string; dataset?: string } = {};
+    const newErrors: { projectId?: string; dataset?: string; token?: string } = {};
     if (!projectId.trim()) newErrors.projectId = "Project ID is required";
     if (!dataset.trim()) newErrors.dataset = "Dataset is required";
+    if (!isEditing && !token.trim()) newErrors.token = "API token is required";
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   }
@@ -69,12 +74,15 @@ export function ConnectionDialog({ open, onClose, connection }: ConnectionDialog
         name: name.trim() || projectId.trim(),
         projectId: projectId.trim(),
         dataset: dataset.trim(),
+        token: token.trim() || connection.token,
       });
+      loadSchema(connection.id);
     } else {
       const conn = saveConnection({
         name: name.trim() || projectId.trim(),
         projectId: projectId.trim(),
         dataset: dataset.trim(),
+        token: token.trim(),
       });
       setActive(conn.id);
     }
@@ -113,6 +121,18 @@ export function ConnectionDialog({ open, onClose, connection }: ConnectionDialog
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
+
+        <Input
+          id="api-token"
+          label="API Token"
+          type="password"
+          placeholder={isEditing ? "Leave blank to keep existing" : "sku..."}
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+        />
+        {errors.token && (
+          <span className="text-xs text-[var(--destructive)]">{errors.token}</span>
+        )}
 
         {testResult && (
           <div

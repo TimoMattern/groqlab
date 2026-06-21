@@ -19,7 +19,7 @@ import {
   CompletionKind,
 } from "./groq-completions";
 import type { GroqCompletion } from "./groq-completions";
-import { useSchemaStore, resolveRefType } from "@/stores/schema-store";
+import { useSchemaStore } from "@/stores/schema-store";
 import { getActiveConnection } from "@/stores/connection-store";
 import type { SchemaField, SchemaType } from "@/lib/sanity-types";
 

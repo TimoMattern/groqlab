@@ -50,7 +50,7 @@ export default function Home() {
         <aside className="w-60 flex-shrink-0" data-testid="sidebar">
           <Sidebar activePanel={sidebarPanel} onPanelChange={setSidebarPanel}>
             {sidebarPanel === "schema" ? (
-              <div className="flex h-full flex-col">
+              <div className="flex flex-col h-[90%]">
                 <SchemaPanel onInsert={handleInsert} />
                 <div className="mt-auto border-t border-[var(--border)] pt-3">
                   <ConnectionList
@@ -66,9 +66,9 @@ export default function Home() {
                 </div>
               </div>
             ) : (
-              <div className="flex h-full flex-col">
+              <div className="flex flex-1 flex-col">
                 <HistoryPanel onReuse={handleReuseQuery} />
-                <div className="mt-auto border-t border-[var(--border)] pt-3">
+                <div className="border-t border-[var(--border)] pt-3">
                   <ConnectionList
                     onAdd={() => {
                       setEditingConnection(undefined);

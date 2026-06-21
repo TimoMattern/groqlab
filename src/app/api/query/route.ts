@@ -22,12 +22,16 @@ export async function POST(request: NextRequest) {
   const requestBody: Record<string, unknown> = { query };
   if (params) requestBody.params = params;
 
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const token = connection.token;
+  if (token) headers.Authorization = `Bearer ${token}`;
+
   const startTime = performance.now();
 
   try {
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(requestBody),
     });
 

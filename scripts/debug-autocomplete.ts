@@ -163,6 +163,7 @@ function setupSchema(types: SchemaType[]) {
         projectId: "debug",
         dataset: "debug",
         createdAt: new Date().toISOString(),
+        token: "",
       },
     ],
     activeId: connId,

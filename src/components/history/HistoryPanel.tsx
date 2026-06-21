@@ -12,7 +12,7 @@ export function HistoryPanel({ onReuse }: HistoryPanelProps) {
   const clearHistory = useHistoryStore((s) => s.clearHistory);
 
   return (
-    <div className="flex h-full flex-col" data-testid="history-panel">
+    <div className="flex flex-1 flex-col overflow-hidden" style={{ minHeight: 0 }} data-testid="history-panel">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs font-medium text-[var(--muted-foreground)]">Query History</span>
         {entries.length > 0 && (
@@ -32,7 +32,7 @@ export function HistoryPanel({ onReuse }: HistoryPanelProps) {
           No query history yet.
         </p>
       )}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto" style={{ minHeight: 0 }}>
         {entries.map((entry) => (
           <div
             key={entry.id}

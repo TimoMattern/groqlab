@@ -3,6 +3,7 @@ export interface ConnectionConfig {
   name: string;
   projectId: string;
   dataset: string;
+  token: string;
   createdAt: string;
 }
 
@@ -23,6 +24,7 @@ export interface QueryResult {
 export interface SchemaType {
   name: string;
   title?: string;
+  kind?: "document" | "object";
   fields: SchemaField[];
 }
 

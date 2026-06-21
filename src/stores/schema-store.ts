@@ -1,15 +1,6 @@
 import { create } from "zustand";
 import type { SchemaType } from "@/lib/sanity-types";
 
-export function resolveRefType(ref: string, schemaTypes: SchemaType[]): string | undefined {
-  for (const t of schemaTypes) {
-    if (ref.startsWith(t.name + "-") || ref.startsWith(t.name + "_")) {
-      return t.name;
-    }
-  }
-  return undefined;
-}
-
 interface SchemaState {
   types: Record<string, SchemaType[]>;
   isLoading: Record<string, boolean>;

@@ -61,6 +61,7 @@ function seedStores(schema?: BenchmarkCase["schema"]) {
       projectId: "benchmark",
       dataset: "production",
       createdAt: new Date().toISOString(),
+      token: "",
     }],
     activeId: BENCHMARK_CONN_ID,
   });

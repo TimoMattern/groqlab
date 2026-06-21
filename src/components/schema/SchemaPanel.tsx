@@ -72,9 +72,14 @@ function FieldRow({ field, depth, onInsert, types }: {
 function resolveTypeName(typeName: string, types: SchemaType[]): SchemaType | undefined {
   let found = types.find((t) => t.name === typeName);
   if (found) return found;
-  return types.find((t) => {
+  found = types.find((t) => {
     const lastSegment = t.name.split(".").pop() || "";
     return lastSegment.toLowerCase().startsWith(typeName.toLowerCase());
+  });
+  if (found) return found;
+  return types.find((t) => {
+    const lower = typeName.toLowerCase();
+    return lower.startsWith(t.name.toLowerCase()) && t.name.toLowerCase() !== lower;
   });
 }
 
@@ -225,16 +230,53 @@ export function SchemaPanel({ onInsert }: SchemaPanelProps) {
           </div>
         )}
 
-        {!isLoading &&
-          sortedTypes.map((type) => (
-            <TypeRow
-              key={type.name}
-              type={type}
-              search={search}
-              onInsert={onInsert}
-              types={types}
-            />
-          ))}
+        {!isLoading && search && sortedTypes.map((type) => (
+          <TypeRow
+            key={type.name}
+            type={type}
+            search={search}
+            onInsert={onInsert}
+            types={types}
+          />
+        ))}
+
+        {!isLoading && !search && (() => {
+          const docTypes = sortedTypes.filter((t) => t.kind === "document" || !t.kind);
+          const objTypes = sortedTypes.filter((t) => t.kind === "object");
+
+          return (
+            <>
+              {docTypes.length > 0 && (
+                <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                  Document Types
+                </div>
+              )}
+              {docTypes.map((type) => (
+                <TypeRow
+                  key={type.name}
+                  type={type}
+                  search=""
+                  onInsert={onInsert}
+                  types={types}
+                />
+              ))}
+              {objTypes.length > 0 && (
+                <div className="mt-2 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                  Object Types
+                </div>
+              )}
+              {objTypes.map((type) => (
+                <TypeRow
+                  key={type.name}
+                  type={type}
+                  search=""
+                  onInsert={onInsert}
+                  types={types}
+                />
+              ))}
+            </>
+          );
+        })()}
       </div>
     </div>
   );

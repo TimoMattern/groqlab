@@ -39,7 +39,7 @@ export function Sidebar({ activePanel, onPanelChange, children }: SidebarProps) 
           History
         </button>
       </div>
-      <div className="flex-1 overflow-auto p-3">
+      <div className="flex-1 overflow-hidden p-3">
         {children}
       </div>
     </div>
