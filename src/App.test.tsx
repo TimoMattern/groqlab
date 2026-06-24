@@ -116,6 +116,8 @@ describe("Home connection flow", () => {
 
     render(<Home />);
 
+    expect(screen.getByTestId("query-tab-query-tab-1")).toBeInTheDocument();
+
     fireEvent.change(screen.getByTestId("query-editor"), {
       target: { value: "*[_type == 'post']" },
     });

@@ -28,7 +28,7 @@ const EMPTY_RESULT: QueryTabResult = {
 
 function createQueryTab(index: number): QueryTab {
   return {
-    id: crypto.randomUUID(),
+    id: index === 1 ? "query-tab-1" : `query-tab-${crypto.randomUUID()}`,
     title: `Query ${index}`,
     query: "",
     result: { ...EMPTY_RESULT },

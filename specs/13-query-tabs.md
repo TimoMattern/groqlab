@@ -16,7 +16,7 @@ interface QueryTabResult {
 }
 
 interface QueryTab {
-  id: string;      // crypto.randomUUID()
+  id: string;      // first tab is deterministic; user-created tabs use crypto.randomUUID()
   title: string;   // "Query 1", "Query 2", ...
   query: string;
   result: QueryTabResult;
@@ -82,3 +82,5 @@ No Zustand store is introduced for tabs. The page owns the tab state because no 
 3. **Closing tabs needs deterministic selection**: Selecting the previous tab when possible matches common editor behavior and avoids jumping to the first tab unexpectedly.
 
 4. **CodeMirror listeners can capture stale React callbacks**: `EditorView.updateListener` is registered once when the editor mounts. Without an `onChangeRef`, switching tabs can leave the listener writing edits into the old active tab.
+
+5. **Initial client state must be hydration-stable**: The first tab cannot use `crypto.randomUUID()` during initial render because the server and client generate different ids, producing mismatched `data-testid` attributes. Use a deterministic first tab id and reserve random ids for user-created tabs.
