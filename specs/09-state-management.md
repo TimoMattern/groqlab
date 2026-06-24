@@ -181,6 +181,6 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
 
 3. **`getState()` bridges React and non-React code**: The `getActiveConnection()` getter is the primary example. It's called from `useQuery.ts` which is a React hook, but the pattern works for any module that imports the store.
 
-4. **No editor store**: The original plan included `editor-store.ts` for editor tabs, content, and cursor position. This was not implemented. Editor state lives in React component state (`useState` in `page.tsx`).
+4. **No editor store**: The original plan included `editor-store.ts` for editor tabs, content, and cursor position. This was not implemented. Query tabs, query text, and per-tab result state live in React component state (`useState` in `page.tsx`).
 
 5. **Silent localStorage failures**: If localStorage is full or unavailable (private browsing in some browsers), the try/catch around `setItem` silently fails. This means connections/history may not persist, but the app continues to work in the session.

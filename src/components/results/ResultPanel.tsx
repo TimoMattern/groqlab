@@ -7,6 +7,14 @@ import { TableView } from "./TableView";
 
 type ViewMode = "raw" | "tree" | "table";
 
+export interface ResultPanelState {
+  data: unknown;
+  durationMs: number | null;
+  documentCount: number | null;
+  error: string | null;
+  isLoading: boolean;
+}
+
 const VIEW_ICONS: Record<ViewMode, typeof Code2> = {
   raw: Code2,
   tree: ListTree,
@@ -19,13 +27,23 @@ const VIEW_LABELS: Record<ViewMode, string> = {
   table: "Table",
 };
 
-export function ResultPanel() {
+interface ResultPanelProps {
+  result?: ResultPanelState;
+}
+
+export function ResultPanel({ result }: ResultPanelProps) {
   const [view, setView] = useState<ViewMode>("tree");
-  const isLoading = useResultStore((s) => s.isLoading);
-  const data = useResultStore((s) => s.data);
-  const error = useResultStore((s) => s.error);
-  const durationMs = useResultStore((s) => s.durationMs);
-  const documentCount = useResultStore((s) => s.documentCount);
+  const storeIsLoading = useResultStore((s) => s.isLoading);
+  const storeData = useResultStore((s) => s.data);
+  const storeError = useResultStore((s) => s.error);
+  const storeDurationMs = useResultStore((s) => s.durationMs);
+  const storeDocumentCount = useResultStore((s) => s.documentCount);
+
+  const isLoading = result ? result.isLoading : storeIsLoading;
+  const data = result ? result.data : storeData;
+  const error = result ? result.error : storeError;
+  const durationMs = result ? result.durationMs : storeDurationMs;
+  const documentCount = result ? result.documentCount : storeDocumentCount;
 
   if (isLoading) {
     return (

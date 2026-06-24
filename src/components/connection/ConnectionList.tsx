@@ -63,7 +63,7 @@ export function ConnectionList({ onAdd, onEdit }: ConnectionListProps) {
           <div
             key={conn.id}
             className={cn(
-              "group flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-sm",
+              "group flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm",
               activeId === conn.id
                 ? "bg-[var(--muted)] font-medium"
                 : "hover:bg-[var(--muted)]",
@@ -71,9 +71,9 @@ export function ConnectionList({ onAdd, onEdit }: ConnectionListProps) {
             onClick={() => setActive(conn.id)}
             data-testid={`connection-${conn.id}`}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
               <span
-                className={cn("h-2 w-2 rounded-full", STATUS_COLORS[cs.status])}
+                className={cn("h-2 w-2 shrink-0 rounded-full", STATUS_COLORS[cs.status])}
                 title={
                   cs.status === "error" ? cs.error :
                   cs.status === "online" ? `Last checked: ${cs.lastChecked ? new Date(cs.lastChecked).toLocaleString() : "never"}` :
@@ -81,14 +81,16 @@ export function ConnectionList({ onAdd, onEdit }: ConnectionListProps) {
                   "Checking..."
                 }
               />
-              <span className="truncate">{conn.name || conn.projectId}</span>
+              <span className="min-w-0 flex-1 truncate" title={conn.name || conn.projectId}>
+                {conn.name || conn.projectId}
+              </span>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1">
               <button
                 onClick={(e) => handleCheck(e, conn)}
                 className={cn(
-                  "rounded p-0.5 hover:bg-[var(--accent)]",
-                  cs.status === "checking" ? "animate-spin" : "opacity-0 group-hover:opacity-100",
+                  "rounded p-1 hover:bg-[var(--accent)]",
+                  cs.status === "checking" && "animate-spin",
                 )}
                 aria-label={`Check connection ${conn.name}`}
                 disabled={cs.status === "checking"}
@@ -100,7 +102,7 @@ export function ConnectionList({ onAdd, onEdit }: ConnectionListProps) {
                   e.stopPropagation();
                   onEdit(conn);
                 }}
-                className="rounded p-0.5 opacity-0 hover:opacity-100 hover:bg-[var(--accent)]"
+                className="rounded p-1 text-[var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
                 aria-label={`Edit connection ${conn.name}`}
               >
                 <Pencil className="h-3 w-3" />
@@ -110,7 +112,7 @@ export function ConnectionList({ onAdd, onEdit }: ConnectionListProps) {
                   e.stopPropagation();
                   removeConnection(conn.id);
                 }}
-                className="rounded p-0.5 opacity-0 hover:opacity-100 hover:bg-[var(--accent)]"
+                className="rounded p-1 text-[var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[var(--destructive)]"
                 aria-label={`Delete connection ${conn.name}`}
               >
                 <Trash2 className="h-3 w-3" />

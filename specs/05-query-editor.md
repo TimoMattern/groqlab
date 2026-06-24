@@ -119,6 +119,6 @@ Custom CSS-based icons for completion types:
 
 3. **EditorView is not a React component**: CM6's `EditorView` manages its own DOM. The React component is just a thin wrapper (`<div ref={containerRef}>`). All CM6 configuration happens in `useEffect` imperatively.
 
-4. **No persisting editor state to store**: Unlike a traditional IDE, the editor value lives in React state (`useState` in `page.tsx`). This makes it simple to integrate with the history "reuse" feature and the clear button.
+4. **No persisting editor state to store**: Unlike a traditional IDE, editor tab state lives in React state (`useState` in `page.tsx`). This keeps tabbed query drafts and their results local to the page while preserving simple integration with history reuse and clear.
 
 5. **CM6 memory management**: The `useEffect` cleanup function must call `view.destroy()`. Failing to do this causes memory leaks and ghost editor instances.

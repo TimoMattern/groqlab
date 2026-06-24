@@ -147,4 +147,18 @@ describe("ConnectionList", () => {
     render(<ConnectionList onAdd={() => {}} onEdit={() => {}} />);
     expect(screen.getByLabelText("Edit connection Connection c1")).toBeInTheDocument();
   });
+
+  it("keeps actions available for long connection names", () => {
+    const longName = "A very long connection name that should not push row actions out of view";
+    useConnectionStore.setState({
+      connections: [makeConn("c1", longName)],
+      activeId: null,
+    });
+
+    render(<ConnectionList onAdd={() => {}} onEdit={() => {}} />);
+
+    expect(screen.getByLabelText(`Edit connection ${longName}`)).toBeInTheDocument();
+    expect(screen.getByLabelText(`Delete connection ${longName}`)).toBeInTheDocument();
+    expect(screen.getByText(longName)).toHaveClass("truncate");
+  });
 });

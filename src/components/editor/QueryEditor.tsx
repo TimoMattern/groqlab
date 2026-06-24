@@ -15,13 +15,15 @@ export function QueryEditor({ value, onChange }: QueryEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const suppressChangeRef = useRef(false);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   useEffect(() => {
     if (!containerRef.current) return;
 
     const updateListener = EditorView.updateListener.of((update) => {
       if (update.docChanged && !suppressChangeRef.current) {
-        onChange(update.state.doc.toString());
+        onChangeRef.current(update.state.doc.toString());
       }
     });
 

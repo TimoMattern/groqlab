@@ -8,6 +8,8 @@ Display GROQ query results in three view modes: JSON Tree (interactive expand/co
 
 **File**: `src/components/results/ResultPanel.tsx`
 
+`ResultPanel` reads from `useResultStore` by default, but can receive a `result` prop for tab-scoped result state.
+
 ### States
 
 | State | Display |
@@ -116,7 +118,9 @@ interface ResultState {
 
 ## Integration
 
-Results flow: `useQuery.runQuery()` → `executeQuery()` (sanity-api.ts) → `setResult()` → `ResultPanel` re-renders.
+Global results flow: `useQuery.runQuery()` → `executeQuery()` (sanity-api.ts) → `setResult()` → `ResultPanel` re-renders.
+
+Tabbed page flow: active tab query → `executeQuery()` → active tab result state → `<ResultPanel result={activeTab.result} />`.
 
 ## Lessons Learned
 
@@ -129,3 +133,5 @@ Results flow: `useQuery.runQuery()` → `executeQuery()` (sanity-api.ts) → `se
 4. **Tree view depth limit prevents freezes**: Without `maxDepth`, deeply nested objects (e.g., Portable Text blocks) would try to render infinite recursion or enormous trees. Default depth of 10 handles 99% of real data.
 
 5. **No copy/export functionality yet**: The original spec mentioned copy-to-clipboard and JSON download. These are not implemented. Future work.
+
+6. **ResultPanel can be store-backed or prop-backed**: This lets the tabbed page keep independent results per tab without forcing every isolated result test or future usage to adopt tab state.

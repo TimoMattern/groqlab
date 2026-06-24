@@ -43,8 +43,9 @@ interface ConnectionStatus {
   - Lists all saved connections with status dot indicator
   - Click to select active connection
   - Inline test/refresh button (with spin animation during check)
-  - Edit button (pencil icon, shown on hover)
-  - Delete button (trash icon, shown on hover)
+  - Edit button (pencil icon, visible in each row)
+  - Delete button (trash icon, visible in each row)
+  - Long connection names truncate so action buttons remain visible
   - Empty state: "No connections yet."
   - Hydration guard: Shows empty state before localStorage is read
 
@@ -116,3 +117,7 @@ Calls `POST /api/test-connection` with `{ projectId, dataset }`. Catches network
 4. **`getActiveConnection()` is a store getter, not a hook**: Defined as a regular function using `useConnectionStore.getState()`, so it can be called from non-React code (e.g., `useQuery.ts`) without hook constraints.
 
 5. **Connections have no API tokens**: The app relies on public/CDN Sanity access. Private datasets would need token support added in the future.
+
+6. **Invisible row actions are not discoverable**: Edit/delete existed behind opacity-only hover styling, but users reasonably perceived the list as add-only. Connection management actions need visible icon buttons in each row, not controls that only appear when hovering a hidden target.
+
+7. **Flex truncation needs `min-w-0`**: A `truncate` class alone is not enough in a flex row. The row and text container must allow shrinking (`min-w-0`) and the action button group must be `shrink-0`, otherwise long connection names push edit/delete out of view.
