@@ -78,10 +78,11 @@ interface DialogProps {
 ```
 
 - Vertical tab strip (40px) on the left with icon-only buttons
-- Content panel fills remaining width (sidebar total: 240px / `w-60`)
+- Content panel fills remaining width
 - Three tabs: **Query** (schema browser), **Connections** (connection list), **History** (query history)
 - Active tab highlighted with `bg-[var(--muted)]` and `text-[var(--primary)]`
 - Each tab receives its own content via `children`
+- Sidebar width is user-resizable (default 240px, range 180–800px, persisted to `groqlab:sidebar-width`)
 
 ```typescript
 export type SidebarTabId = "query" | "connections" | "history";
@@ -93,6 +94,12 @@ interface SidebarProps {
 }
 ```
 
+**Sidebar resize** (`src/lib/use-sidebar-width.ts`):
+- Manages absolute pixel width with `localStorage` persistence
+- Min: 180px, Max: 800px, Default: 240px
+- A `ResizeHandle` on the right edge of the sidebar provides the drag target
+- Icon tab strip remains fixed at 40px; only the content panel scales with the sidebar width
+
 ### Toolbar (`src/components/layout/Toolbar.tsx`)
 
 ```
@@ -103,6 +110,57 @@ interface SidebarProps {
 
 - Run: disabled when no query or already running
 - Clear: ghost variant, disabled when no query
+
+### Resizable Split Pane
+
+The editor/results split in the main content area is resizable. The user can drag the divider between the two panes to allocate space according to their preference.
+
+**Mechanism:**
+- A thin (4px) `ResizeHandle` sits between the editor and results panes
+- On hover, the cursor changes to `col-resize`
+- On mousedown, a `mousemove`/`mouseup` listener pair tracks the drag
+- The split ratio is persisted to `localStorage` under `groqlab:editor-split`
+- During drag, `document.body.style.cursor = "col-resize"` and `userSelect = "none"` prevent text selection
+
+**Components:**
+
+`src/lib/use-resizable.ts` — Generic hook for horizontal split resize:
+```typescript
+interface UseResizableOptions {
+  storageKey: string;       // localStorage key
+  defaultRatio: number;     // 0-1, default 0.5
+  minLeftPx: number;        // minimum left pane width (200)
+  minRightPx: number;       // minimum right pane width (200)
+}
+
+interface UseResizableReturn {
+  ratio: number;
+  containerRef: RefObject<HTMLDivElement>;
+  onResizeStart: (e: React.MouseEvent) => void;
+}
+```
+
+`src/components/layout/ResizeHandle.tsx` — Visual drag handle:
+- `w-1` (4px) width
+- `cursor-col-resize` on hover
+- `bg-[var(--border)]` default, `hover:bg-[var(--primary)]` on hover
+- Receives `onMouseDown` from the hook
+
+**Layout structure:**
+```
+┌───────────────────────┬──┬────────────────────┐
+│  Editor Pane          │▏▏│  Results Pane      │
+│  (ratio * 100% width) │  │  (flex-1)          │
+│  flex-none            │  │                    │
+└───────────────────────┴──┴────────────────────┘
+                         ▲
+                    ResizeHandle
+                   (cursor: col-resize)
+```
+
+**Constraints enforced in the hook (not CSS):**
+- Left pane minimum: 200px
+- Right pane minimum: 200px
 
 ### StatusBar (`src/components/layout/StatusBar.tsx`)
 
@@ -197,3 +255,7 @@ The app follows a consistent pattern for loading states:
 4. **Dialog backdrop close**: Clicking the backdrop closes the dialog. This is standard UX but requires the `if (e.target === e.currentTarget)` check to avoid closing when clicking inside the dialog.
 
 5. **Hydration guard prevents SSR flash**: The `hydrated` pattern prevents components from rendering their "empty/no data" state on the server, then immediately showing data on the client. Without it, users see a flash of "No connections yet." before the localStorage data loads.
+
+6. **Percentage-based split avoids window-resize jank**: Using a ratio (0-1) instead of absolute pixel widths means the split proportion is preserved across window resizes. The ratio is computed against `container.getBoundingClientRect().width` at drag-start, giving stable behavior during a single drag gesture.
+
+7. **Document-level event listeners during drag**: Attaching `mousemove` and `mouseup` to `document` (not the element) ensures the drag gesture tracks the mouse even when it leaves the element boundary. This is the standard pattern for drag-to-resize but requires proper cleanup on mouseup.

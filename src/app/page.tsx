@@ -11,6 +11,9 @@ import { HistoryPanel } from "@/components/history/HistoryPanel";
 import { ResultPanel } from "@/components/results/ResultPanel";
 import { QueryEditor } from "@/components/editor/QueryEditor";
 import { QueryTabs, type QueryTab, type QueryTabResult } from "@/components/editor/QueryTabs";
+import { ResizeHandle } from "@/components/layout/ResizeHandle";
+import { useResizable } from "@/lib/use-resizable";
+import { useSidebarWidth } from "@/lib/use-sidebar-width";
 import { useKeyboard } from "@/lib/use-keyboard";
 import { useConnections } from "@/hooks/useConnections";
 import { executeQuery } from "@/lib/sanity-api";
@@ -154,10 +157,19 @@ export default function Home() {
 
   useKeyboard({ onRun: handleRun, onClear: handleClear });
 
+  const { ratio, containerRef, onResizeStart } = useResizable({
+    storageKey: "groqlab:editor-split",
+    defaultRatio: 0.5,
+    minLeftPx: 200,
+    minRightPx: 200,
+  });
+
+  const { width: sidebarWidth, onResizeStart: onSidebarResize } = useSidebarWidth();
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[var(--background)]">
       <div className="flex flex-1 overflow-hidden">
-        <aside className="w-60 flex-shrink-0" data-testid="sidebar">
+        <aside className="flex-shrink-0 overflow-hidden" data-testid="sidebar" style={{ width: sidebarWidth }}>
           <Sidebar activeTab={sidebarTab} onTabChange={setSidebarTab}>
             {sidebarTab === "query" && <SchemaPanel onInsert={handleInsert} />}
             {sidebarTab === "connections" && (
@@ -175,6 +187,7 @@ export default function Home() {
             {sidebarTab === "history" && <HistoryPanel onReuse={handleReuseQuery} />}
           </Sidebar>
         </aside>
+        <ResizeHandle onMouseDown={onSidebarResize} />
 
         <main className="flex flex-1 flex-col overflow-hidden">
           <Toolbar
@@ -184,8 +197,8 @@ export default function Home() {
             hasQuery={query.trim().length > 0}
           />
 
-          <div className="flex flex-1 overflow-hidden">
-            <div className="flex w-1/2 flex-col border-r border-[var(--border)]">
+          <div ref={containerRef} className="flex flex-1 overflow-hidden">
+            <div className="flex flex-none flex-col overflow-hidden" style={{ width: `${ratio * 100}%` }}>
               <QueryTabs
                 tabs={tabs}
                 activeTabId={activeTabId}
@@ -197,7 +210,8 @@ export default function Home() {
                 <QueryEditor key={activeTabId} value={query} onChange={setActiveQuery} />
               </div>
             </div>
-            <div className="w-1/2 overflow-auto">
+            <ResizeHandle onMouseDown={onResizeStart} />
+            <div className="flex-1 overflow-auto">
               <ResultPanel result={activeTab.result} />
             </div>
           </div>
