@@ -6,6 +6,7 @@ import {
   extractInlineObjectTypes,
   extractArrayItemTypes,
 } from "@/lib/schema-inference";
+import { BUILT_IN_TYPES } from "@/lib/builtin-types";
 import type { SchemaType } from "@/lib/sanity-types";
 
 const GROQ_API_VERSION = "v2021-06-07";
@@ -100,6 +101,13 @@ async function inferSchemaFromSamples(
   postProcessInferredTypes(types);
   extractInlineObjectTypes(types);
   extractArrayItemTypes(types, typeNames, sampleDocs);
+
+  const inferredNames = new Set(types.map((t) => t.name));
+  for (const builtin of BUILT_IN_TYPES) {
+    if (!inferredNames.has(builtin.name)) {
+      types.push(builtin);
+    }
+  }
 
   return { types };
 }

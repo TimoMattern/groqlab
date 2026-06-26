@@ -37,7 +37,7 @@ describe("inferFields", () => {
     expect(metadata?.fields).toHaveLength(1);
   });
 
-  it("detects references from _ref prefix", () => {
+  it("detects references without resolving _ref prefix", () => {
     const doc = {
       author: { _ref: "author-abc123", _type: "reference" },
     };
@@ -46,10 +46,10 @@ describe("inferFields", () => {
     const author = fields.find((f) => f.name === "author");
     expect(author).toBeDefined();
     expect(author?.isReference).toBe(true);
-    expect(author?.type).toBe("author");
+    expect(author?.type).toBe("reference");
   });
 
-  it("detects array references", () => {
+  it("detects array references without resolving prefix", () => {
     const doc = {
       authors: [
         { _ref: "author-abc", _type: "reference" },
@@ -62,7 +62,7 @@ describe("inferFields", () => {
     expect(authors).toBeDefined();
     expect(authors?.isReference).toBe(true);
     expect(authors?.isArray).toBe(true);
-    expect(authors?.type).toBe("author");
+    expect(authors?.type).toBe("reference");
   });
 
   it("infers scalar types", () => {
@@ -131,7 +131,7 @@ describe("extractInlineObjectTypes", () => {
             isArray: false,
             isReference: false,
             fields: [
-              { name: "asset", type: "image", isArray: false, isReference: true },
+              { name: "asset", type: "reference", isArray: false, isReference: true },
               { name: "caption", type: "string", isArray: false, isReference: false },
             ],
           },
@@ -191,7 +191,7 @@ describe("extractInlineObjectTypes", () => {
             type: "image",
             isArray: false, isReference: false,
             fields: [
-              { name: "asset", type: "image", isArray: false, isReference: true },
+              { name: "asset", type: "reference", isArray: false, isReference: true },
             ],
           },
         ],
@@ -204,7 +204,7 @@ describe("extractInlineObjectTypes", () => {
             type: "image",
             isArray: false, isReference: false,
             fields: [
-              { name: "asset", type: "image", isArray: false, isReference: true },
+              { name: "asset", type: "reference", isArray: false, isReference: true },
               { name: "caption", type: "string", isArray: false, isReference: false },
             ],
           },
@@ -226,7 +226,7 @@ describe("extractInlineObjectTypes", () => {
         fields: [
           {
             name: "author",
-            type: "author",
+            type: "reference",
             isArray: false,
             isReference: true,
             fields: [

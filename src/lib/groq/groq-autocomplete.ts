@@ -124,6 +124,37 @@ function resolveFieldTargetType(field: SchemaField, fieldName: string): SchemaTy
   return undefined;
 }
 
+/** Fire-and-forget resolve all unresolved refs matching fieldName across all types.
+ *  Called when -> deref can't find a target synchronously — the resolve will update
+ *  the store and the next keystroke's completion will pick up the resolved type. */
+function triggerRefResolve(fieldName: string): void {
+  const conn = getActiveConnection();
+  if (!conn) return;
+  const store = useSchemaStore.getState();
+  const types = store.getTypes(conn.id);
+  if (!types || types.length === 0) return;
+
+  for (const t of types) {
+    const collectPaths = (fields: SchemaField[], path: string): string[] => {
+      const paths: string[] = [];
+      for (const f of fields) {
+        const currentPath = path ? `${path}.${f.name}` : f.name;
+        if (f.name === fieldName && f.isReference && f.type === "reference") {
+          paths.push(currentPath);
+        }
+        if (f.fields) {
+          paths.push(...collectPaths(f.fields, currentPath));
+        }
+      }
+      return paths;
+    };
+    const paths = collectPaths(t.fields, "");
+    for (const fieldPath of paths) {
+      store.resolveRef(conn.id, conn, t.name, fieldPath);
+    }
+  }
+}
+
 function findReferenceTargetType(fieldName: string): SchemaType | undefined {
   const types = getSchemaTypes();
   const searchFields = (fields: SchemaField[]): SchemaField | undefined => {
@@ -354,6 +385,7 @@ function resolveArrayFieldType(
   if (field.isReference) {
     const targetType = resolveFieldTargetType(field, field.name);
     if (targetType) return { kind: "deref", typeName: targetType.name };
+    triggerRefResolve(field.name);
   }
   if (field.fields) {
     return {
@@ -580,6 +612,7 @@ export function detectContext(before: string): CompletionCtx {
         if (refType) {
           return { kind: "deref", typeName: refType.name };
         }
+        triggerRefResolve(fieldName);
       }
 
       // -> deref inside projection (after the opening brace)
@@ -591,6 +624,7 @@ export function detectContext(before: string): CompletionCtx {
         if (refType) {
           return { kind: "deref", typeName: refType.name };
         }
+        triggerRefResolve(fieldName);
         return { kind: "deref", typeName: "" };
       }
 
@@ -700,6 +734,7 @@ export function detectContext(before: string): CompletionCtx {
     if (refType) {
       return { kind: "deref", typeName: refType.name };
     }
+    triggerRefResolve(fieldName);
     return { kind: "deref", typeName: "" };
   }
 

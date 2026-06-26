@@ -17,23 +17,14 @@ export function inferFields(doc: Record<string, unknown>): SchemaField[] {
     .filter(([key]) => !key.startsWith("_"))
     .map(([key, value]) => {
       if (Array.isArray(value)) {
-        const refsInArray = value
-          .filter((item): item is Record<string, unknown> =>
-            item !== null && typeof item === "object" && "_ref" in (item as Record<string, unknown>),
-          )
-          .map((item) => {
-            const obj = item as Record<string, unknown>;
-            const ref = obj._ref as string;
-            const refType = obj._type as string;
-            const refPrefix = ref?.indexOf("-") > 0 ? ref.slice(0, ref.indexOf("-")) : "";
-            return refPrefix || (refType && refType !== "reference" ? refType : "");
-          })
-          .filter(Boolean);
-        if (refsInArray.length > 0) {
-          const uniqueRefTypes = [...new Set(refsInArray)];
+        const hasRefs = value.some(
+          (item): item is Record<string, unknown> =>
+            item !== null && typeof item === "object" && "_ref" in item,
+        );
+        if (hasRefs) {
           return {
             name: key,
-            type: uniqueRefTypes.length === 1 ? uniqueRefTypes[0] : "reference",
+            type: "reference",
             isArray: true,
             isReference: true,
           };
@@ -54,13 +45,9 @@ export function inferFields(doc: Record<string, unknown>): SchemaField[] {
         typeof value === "object" &&
         (value as Record<string, unknown>)._ref
       ) {
-        const ref = (value as Record<string, unknown>)._ref as string;
-        const refType = (value as Record<string, unknown>)._type as string;
-        const refPrefix = ref?.indexOf("-") > 0 ? ref.slice(0, ref.indexOf("-")) : "";
-        const resolvedType = refPrefix || (refType && refType !== "reference" ? refType : "reference");
         return {
           name: key,
-          type: resolvedType,
+          type: "reference",
           isArray: false,
           isReference: true,
         };
@@ -140,27 +127,6 @@ export function postProcessInferredTypes(types: SchemaType[]): void {
         if (arrMatch) {
           f.type = arrMatch.name;
         }
-      } else if (f.isReference && !knownTypeNames.has(f.type)) {
-        const exactMatch = types.find((ot) => ot.name === f.name);
-        if (exactMatch) {
-          f.type = exactMatch.name;
-          continue;
-        }
-        const fuzzyMatch = types.find((ot) => {
-          const seg = ot.name.split(".").pop() || "";
-          return seg.toLowerCase().startsWith(f.name.toLowerCase());
-        });
-        if (fuzzyMatch) {
-          f.type = fuzzyMatch.name;
-          continue;
-        }
-        const typeContainsKnown = types.find((ot) => {
-          const lower = f.type.toLowerCase();
-          return lower.startsWith(ot.name.toLowerCase()) && ot.name.toLowerCase() !== lower;
-        });
-        if (typeContainsKnown) {
-          f.type = typeContainsKnown.name;
-        }
       }
     }
   }
@@ -168,14 +134,6 @@ export function postProcessInferredTypes(types: SchemaType[]): void {
 
 export function extractInlineObjectTypes(types: SchemaType[]): void {
   const knownNames = new Set(types.map((t) => t.name));
-
-  function cleanSelfRefs(fields: SchemaField[], parentName: string): SchemaField[] {
-    return fields.map((child) => ({
-      ...child,
-      type: child.isReference && child.type === parentName ? "reference" : child.type,
-      fields: child.fields ? cleanSelfRefs(child.fields, parentName) : undefined,
-    }));
-  }
 
   function walk(fields: SchemaField[]): void {
     for (const f of fields) {
@@ -185,7 +143,7 @@ export function extractInlineObjectTypes(types: SchemaType[]): void {
 
         if (!knownNames.has(name)) {
           knownNames.add(name);
-          types.push({ name, kind: "object", fields: cleanSelfRefs(f.fields, name) });
+          types.push({ name, kind: "object", fields: [...f.fields] });
         }
 
         walk(f.fields);
