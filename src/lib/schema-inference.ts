@@ -169,6 +169,14 @@ export function postProcessInferredTypes(types: SchemaType[]): void {
 export function extractInlineObjectTypes(types: SchemaType[]): void {
   const knownNames = new Set(types.map((t) => t.name));
 
+  function cleanSelfRefs(fields: SchemaField[], parentName: string): SchemaField[] {
+    return fields.map((child) => ({
+      ...child,
+      type: child.isReference && child.type === parentName ? "reference" : child.type,
+      fields: child.fields ? cleanSelfRefs(child.fields, parentName) : undefined,
+    }));
+  }
+
   function walk(fields: SchemaField[]): void {
     for (const f of fields) {
       if (f.fields && f.fields.length > 0 && !f.isReference) {
@@ -177,7 +185,7 @@ export function extractInlineObjectTypes(types: SchemaType[]): void {
 
         if (!knownNames.has(name)) {
           knownNames.add(name);
-          types.push({ name, kind: "object", fields: f.fields });
+          types.push({ name, kind: "object", fields: cleanSelfRefs(f.fields, name) });
         }
 
         walk(f.fields);

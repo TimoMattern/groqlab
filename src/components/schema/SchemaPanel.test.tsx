@@ -308,7 +308,7 @@ describe("SchemaPanel", () => {
       {
         name: "image",
         fields: [
-          makeField({ name: "asset", type: "image", isReference: true }),
+          makeField({ name: "asset", type: "reference", isReference: true }),
           makeField({ name: "caption", type: "string" }),
         ],
       },
