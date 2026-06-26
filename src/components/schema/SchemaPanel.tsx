@@ -9,11 +9,12 @@ interface SchemaPanelProps {
   onInsert: (text: string) => void;
 }
 
-function FieldRow({ field, depth, onInsert, types }: {
+function FieldRow({ field, depth, onInsert, types, visitedTypes = new Set() }: {
   field: SchemaField;
   depth: number;
   onInsert?: (text: string) => void;
   types: SchemaType[];
+  visitedTypes?: Set<string>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const typeLabel = field.isArray ? `${field.type}[]` : field.isReference ? `ref(${field.type})` : field.type;
@@ -24,11 +25,17 @@ function FieldRow({ field, depth, onInsert, types }: {
     : field.type === "unknown"
       ? resolveTypeName(field.name, types)
       : undefined;
-  const hasChildren = hasObjectFields || !!refTarget;
+
+  const isCircular = refTarget ? visitedTypes.has(refTarget.name) : false;
+  const hasChildren = (hasObjectFields || !!refTarget) && !isCircular;
 
   const childFields = refTarget && !hasObjectFields
     ? refTarget.fields
     : field.fields ?? [];
+
+  const nextVisited = refTarget && !isCircular
+    ? new Set([...visitedTypes, refTarget.name])
+    : visitedTypes;
 
   function handleClick() {
     if (hasChildren) {
@@ -61,7 +68,7 @@ function FieldRow({ field, depth, onInsert, types }: {
       {expanded && hasChildren && (
         <div>
           {childFields.map((child) => (
-            <FieldRow key={child.name} field={child} depth={depth + 1} onInsert={onInsert} types={types} />
+            <FieldRow key={child.name} field={child} depth={depth + 1} onInsert={onInsert} types={types} visitedTypes={nextVisited} />
           ))}
         </div>
       )}
@@ -143,7 +150,7 @@ function TypeRow({
       </button>
       {(expanded || search) &&
         filteredFields.map((field) => (
-          <FieldRow key={field.name} field={field} depth={1} onInsert={onInsert} types={types} />
+          <FieldRow key={field.name} field={field} depth={1} onInsert={onInsert} types={types} visitedTypes={new Set([type.name])} />
         ))}
     </div>
   );

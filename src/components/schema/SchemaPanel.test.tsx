@@ -3,7 +3,11 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { SchemaPanel } from "./SchemaPanel";
 import { useConnectionStore } from "@/stores/connection-store";
 import { useSchemaStore } from "@/stores/schema-store";
-import type { SchemaType } from "@/lib/sanity-types";
+import type { SchemaType, SchemaField } from "@/lib/sanity-types";
+
+function makeField(overrides: Partial<SchemaField> & { name: string; type: string }): SchemaField {
+  return { isArray: false, isReference: false, ...overrides };
+}
 
 const { mockFetchSchema } = vi.hoisted(() => ({ mockFetchSchema: vi.fn() }));
 vi.mock("@/lib/sanity-api", () => ({ fetchSchema: mockFetchSchema }));
@@ -184,5 +188,139 @@ describe("SchemaPanel", () => {
     expect(items[0]).toHaveTextContent("apple");
     expect(items[1]).toHaveTextContent("title");
     expect(items[2]).toHaveTextContent("zebra");
+  });
+
+  it("resolves forward references and shows referenced type's fields", () => {
+    useConnectionStore.setState({
+      connections: [makeConn("c1")],
+      activeId: "c1",
+    });
+    useSchemaStore.getState().setTypes("c1", [
+      {
+        name: "post",
+        fields: [
+          makeField({ name: "title", type: "string" }),
+          makeField({ name: "author", type: "author", isReference: true }),
+        ],
+      },
+      {
+        name: "author",
+        fields: [
+          makeField({ name: "name", type: "string" }),
+        ],
+      },
+    ]);
+    const onInsert = vi.fn();
+    render(<SchemaPanel onInsert={onInsert} />);
+
+    fireEvent.click(screen.getByText("post"));
+    expect(screen.getByText("title")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText(/ref\(author\)/));
+    expect(screen.getByText("name")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("name"));
+    expect(onInsert).toHaveBeenCalledWith("name");
+  });
+
+  it("treats circular self-references as non-expandable leaves", () => {
+    useConnectionStore.setState({
+      connections: [makeConn("c1")],
+      activeId: "c1",
+    });
+    useSchemaStore.getState().setTypes("c1", [
+      {
+        name: "category",
+        fields: [
+          makeField({ name: "name", type: "string" }),
+          makeField({ name: "parent", type: "category", isReference: true }),
+        ],
+      },
+    ]);
+    const onInsert = vi.fn();
+    render(<SchemaPanel onInsert={onInsert} />);
+
+    fireEvent.click(screen.getByText("category"));
+
+    const nameElementsBefore = screen.getAllByText("name");
+    expect(nameElementsBefore).toHaveLength(1);
+
+    fireEvent.click(screen.getByText("parent"));
+    expect(onInsert).toHaveBeenCalledWith("parent");
+
+    const nameElementsAfter = screen.getAllByText("name");
+    expect(nameElementsAfter).toHaveLength(1);
+  });
+
+  it("handles mutual circular references (A→B→A) without crashing", () => {
+    useConnectionStore.setState({
+      connections: [makeConn("c1")],
+      activeId: "c1",
+    });
+    useSchemaStore.getState().setTypes("c1", [
+      {
+        name: "author",
+        fields: [
+          makeField({ name: "name", type: "string" }),
+          makeField({ name: "posts", type: "post", isArray: true, isReference: true }),
+        ],
+      },
+      {
+        name: "post",
+        fields: [
+          makeField({ name: "title", type: "string" }),
+          makeField({ name: "author", type: "author", isReference: true }),
+        ],
+      },
+    ]);
+    render(<SchemaPanel onInsert={() => {}} />);
+
+    fireEvent.click(screen.getByText("author"));
+    expect(screen.getByText("name")).toBeInTheDocument();
+    expect(screen.getByText("posts")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("posts"));
+    expect(screen.getByText("title")).toBeInTheDocument();
+  });
+
+  it("resolves refs through inline object types (movie → poster → asset → image fields)", () => {
+    useConnectionStore.setState({
+      connections: [makeConn("c1")],
+      activeId: "c1",
+    });
+    useSchemaStore.getState().setTypes("c1", [
+      {
+        name: "movie",
+        fields: [
+          makeField({ name: "title", type: "string" }),
+          {
+            name: "poster",
+            type: "image",
+            isArray: false,
+            isReference: false,
+            fields: [
+              makeField({ name: "asset", type: "image", isReference: true }),
+              makeField({ name: "caption", type: "string" }),
+            ],
+          },
+        ],
+      },
+      {
+        name: "image",
+        fields: [
+          makeField({ name: "asset", type: "image", isReference: true }),
+          makeField({ name: "caption", type: "string" }),
+        ],
+      },
+    ]);
+    render(<SchemaPanel onInsert={() => {}} />);
+
+    fireEvent.click(screen.getByText("movie"));
+    fireEvent.click(screen.getByText("poster"));
+    expect(screen.getByText("caption")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("asset"));
+    const captions = screen.getAllByText("caption");
+    expect(captions).toHaveLength(2);
   });
 });
