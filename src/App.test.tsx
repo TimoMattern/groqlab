@@ -4,15 +4,20 @@ import Home from "./app/page";
 import { useConnectionStore } from "@/stores/connection-store";
 import { useHistoryStore } from "@/stores/history-store";
 
-vi.mock("@/components/editor/QueryEditor", () => ({
-  QueryEditor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
-    <textarea
-      data-testid="query-editor"
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-    />
-  ),
-}));
+vi.mock("@/components/editor/QueryEditor", async () => {
+  const React = await import("react");
+  return {
+    QueryEditor: React.forwardRef(
+      ({ value, onChange }: { value: string; onChange: (value: string) => void }, _ref: React.Ref<unknown>) => (
+        <textarea
+          data-testid="query-editor"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      ),
+    ),
+  };
+});
 
 beforeEach(() => {
   vi.restoreAllMocks();

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { SchemaType, SchemaField, ConnectionConfig } from "@/lib/sanity-types";
+import { FlightRecorder } from "@/lib/flight-recorder";
 
 interface SchemaState {
   types: Record<string, SchemaType[]>;
@@ -32,14 +33,17 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
 
   setTypes: (connectionId, types) => {
     set((s) => ({ types: { ...s.types, [connectionId]: types } }));
+    FlightRecorder.instance.recordSnapshot("after-action");
   },
 
   setLoading: (connectionId, loading) => {
     set((s) => ({ isLoading: { ...s.isLoading, [connectionId]: loading } }));
+    FlightRecorder.instance.recordSnapshot("after-action");
   },
 
   setError: (connectionId, error) => {
     set((s) => ({ error: { ...s.error, [connectionId]: error } }));
+    FlightRecorder.instance.recordSnapshot("after-action");
   },
 
   getTypes: (connectionId) => get().types[connectionId] ?? [],
@@ -58,6 +62,7 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
         Object.entries(s.error).filter(([k]) => k !== connectionId),
       ),
     }));
+    FlightRecorder.instance.recordSnapshot("after-action");
   },
 
   resolveRef: async (connectionId, conn, parentTypeName, fieldPath) => {
@@ -106,6 +111,7 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
           if (resolved.length === 1) {
             field.type = resolved[0];
             set((s) => ({ types: { ...s.types, [connectionId]: [...types] } }));
+            FlightRecorder.instance.recordSnapshot("after-action");
             return true;
           }
         }
@@ -124,11 +130,13 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
     if (fieldName === "asset" && (parentField?.type === "image" || parentTypeName === "image")) {
       field.type = "sanity.imageAsset";
       set((s) => ({ types: { ...s.types, [connectionId]: [...types] } }));
+      FlightRecorder.instance.recordSnapshot("after-action");
       return true;
     }
     if (fieldName === "asset" && (parentField?.type === "file" || parentTypeName === "file")) {
       field.type = "sanity.fileAsset";
       set((s) => ({ types: { ...s.types, [connectionId]: [...types] } }));
+      FlightRecorder.instance.recordSnapshot("after-action");
       return true;
     }
 
@@ -137,6 +145,7 @@ export const useSchemaStore = create<SchemaState>((set, get) => ({
     if (types.some((t) => t.name === fieldName)) {
       field.type = fieldName;
       set((s) => ({ types: { ...s.types, [connectionId]: [...types] } }));
+      FlightRecorder.instance.recordSnapshot("after-action");
       return true;
     }
 

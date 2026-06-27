@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Sidebar, type SidebarTabId } from "@/components/layout/Sidebar";
 import { Toolbar } from "@/components/layout/Toolbar";
 import { StatusBar } from "@/components/layout/StatusBar";
@@ -9,7 +9,7 @@ import { ConnectionDialog } from "@/components/connection/ConnectionDialog";
 import { SchemaPanel } from "@/components/schema/SchemaPanel";
 import { HistoryPanel } from "@/components/history/HistoryPanel";
 import { ResultPanel } from "@/components/results/ResultPanel";
-import { QueryEditor } from "@/components/editor/QueryEditor";
+import { QueryEditor, type QueryEditorHandle } from "@/components/editor/QueryEditor";
 import { QueryTabs, type QueryTab, type QueryTabResult } from "@/components/editor/QueryTabs";
 import { ResizeHandle } from "@/components/layout/ResizeHandle";
 import { useResizable } from "@/lib/use-resizable";
@@ -20,6 +20,9 @@ import { executeQuery } from "@/lib/sanity-api";
 import { getActiveConnection } from "@/stores/connection-store";
 import { useHistoryStore } from "@/stores/history-store";
 import type { ConnectionConfig } from "@/lib/sanity-types";
+import { useEffect } from "react";
+import { setupFlightGlobal, FlightRecorder } from "@/lib/flight-recorder";
+import { FlightRecorderPanel } from "@/components/debug/FlightRecorderPanel";
 
 const EMPTY_RESULT: QueryTabResult = {
   data: null,
@@ -47,9 +50,15 @@ export default function Home() {
   const addHistoryEntry = useHistoryStore((s) => s.addEntry);
   useConnections();
 
+  useEffect(() => { setupFlightGlobal(); }, []);
+
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   const query = activeTab.query;
   const isLoading = activeTab.result.isLoading;
+
+  useEffect(() => {
+    FlightRecorder.instance.setActiveQuery(query);
+  }, [query]);
 
   const updateTab = useCallback((tabId: string, update: (tab: QueryTab) => QueryTab) => {
     setTabs((currentTabs) =>
@@ -155,7 +164,21 @@ export default function Home() {
     }
   }, [activeTabId, tabs]);
 
+  const [showFlightPanel, setShowFlightPanel] = useState(false);
+  const editorRef = useRef<QueryEditorHandle>(null);
+
   useKeyboard({ onRun: handleRun, onClear: handleClear });
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.ctrlKey && e.shiftKey && e.key === "D") {
+        e.preventDefault();
+        setShowFlightPanel((v) => !v);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const { ratio, containerRef, onResizeStart } = useResizable({
     storageKey: "groqlab:editor-split",
@@ -207,7 +230,7 @@ export default function Home() {
                 onClose={handleCloseTab}
               />
               <div className="flex-1 overflow-hidden">
-                <QueryEditor key={activeTabId} value={query} onChange={setActiveQuery} />
+                <QueryEditor ref={editorRef} key={activeTabId} value={query} onChange={setActiveQuery} />
               </div>
             </div>
             <ResizeHandle onMouseDown={onResizeStart} />
@@ -228,6 +251,8 @@ export default function Home() {
         }}
         connection={editingConnection}
       />
+
+      {showFlightPanel && <FlightRecorderPanel editorRef={editorRef} />}
     </div>
   );
 }

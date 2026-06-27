@@ -22,10 +22,11 @@ import type { GroqCompletion } from "./groq-completions";
 import { useSchemaStore } from "@/stores/schema-store";
 import { getActiveConnection } from "@/stores/connection-store";
 import type { SchemaField, SchemaType } from "@/lib/sanity-types";
+import { FlightRecorder } from "@/lib/flight-recorder";
 
 // ─── Context types ───────────────────────────────────────────────────────────
 
-type CompletionCtx =
+export type CompletionCtx =
   | { kind: "root" }
   | { kind: "filter"; before: string }
   | { kind: "string-value"; before: string }
@@ -226,18 +227,18 @@ function trySyncRefResolve(type: SchemaType, fieldPath: string, allTypes: Schema
  * resolved type names immediately, then fires async API resolution for
  * authoritative type info.
  */
-function optimisticallyResolveTypeRefs(typeName: string): void {
+function optimisticallyResolveTypeRefs(typeName: string): string[] {
   const conn = getActiveConnection();
-  if (!conn) return;
+  if (!conn) return [];
   const store = useSchemaStore.getState();
   const types = store.getTypes(conn.id);
-  if (!types || types.length === 0) return;
+  if (!types || types.length === 0) return [];
 
   const t = types.find((t) => t.name === typeName);
-  if (!t) return;
+  if (!t) return [];
 
   const paths = collectUnresolvedRefPaths(t.fields);
-  if (paths.length === 0) return;
+  if (paths.length === 0) return [];
 
   // Sync convention-based resolution first — updates field.type in-place
   // so that completion providers reading fieldDetail() see resolved types.
@@ -255,6 +256,28 @@ function optimisticallyResolveTypeRefs(typeName: string): void {
   for (const fieldPath of paths) {
     store.resolveRef(conn.id, conn, t.name, fieldPath);
   }
+
+  return paths;
+}
+
+function captureFieldTypes(): Record<string, string> {
+  const types = getSchemaTypes();
+  const result: Record<string, string> = {};
+  for (const t of types) {
+    const walk = (fields: SchemaField[], prefix: string) => {
+      for (const f of fields) {
+        const key = prefix ? `${prefix}.${f.name}` : `${t.name}.${f.name}`;
+        result[key] = f.isArray
+          ? `${f.type}[]`
+          : f.isReference
+            ? f.type === "reference" ? "ref(…)" : `ref(${f.type})`
+            : f.type;
+        if (f.fields) walk(f.fields, key);
+      }
+    };
+    walk(t.fields, "");
+  }
+  return result;
 }
 
 function findReferenceTargetType(fieldName: string): SchemaType | undefined {
@@ -1489,6 +1512,8 @@ export function groqCompletionSource(
 
   // Detect context
   const ctx = detectContext(before);
+  const fieldTypesBefore = FlightRecorder.instance.isEnabled() ? captureFieldTypes() : {};
+  const resolvesTriggered: string[] = [];
   let options: Completion[] = [];
   let from = word?.from ?? context.pos;
 
@@ -1517,14 +1542,14 @@ export function groqCompletionSource(
     }
 
     case "projection": {
-      if (ctx.typeName) optimisticallyResolveTypeRefs(ctx.typeName);
+      if (ctx.typeName) resolvesTriggered.push(...optimisticallyResolveTypeRefs(ctx.typeName));
       options = projectionCompletions(ctx.typeName, ctx.before, query);
       if (options.length === 0 && !explicit) return null;
       break;
     }
 
     case "object-projection": {
-      if (ctx.typeName) optimisticallyResolveTypeRefs(ctx.typeName);
+      if (ctx.typeName) resolvesTriggered.push(...optimisticallyResolveTypeRefs(ctx.typeName));
       const liveFields = ctx.fieldName ? findFieldSubFields(ctx.fieldName) ?? ctx.fields : ctx.fields;
       options = objectProjectionCompletions(liveFields, query);
       if (options.length === 0 && !explicit) return null;
@@ -1553,25 +1578,25 @@ export function groqCompletionSource(
     }
 
     case "deref": {
-      if (ctx.typeName) optimisticallyResolveTypeRefs(ctx.typeName);
+      if (ctx.typeName) resolvesTriggered.push(...optimisticallyResolveTypeRefs(ctx.typeName));
       options = derefCompletions(ctx.typeName, query);
       break;
     }
 
     case "dot-access": {
-      if (ctx.typeName) optimisticallyResolveTypeRefs(ctx.typeName);
+      if (ctx.typeName) resolvesTriggered.push(...optimisticallyResolveTypeRefs(ctx.typeName));
       options = dotAccessCompletions(ctx.typeName, query);
       break;
     }
 
     case "array-projection": {
-      if (ctx.typeName) optimisticallyResolveTypeRefs(ctx.typeName);
+      if (ctx.typeName) resolvesTriggered.push(...optimisticallyResolveTypeRefs(ctx.typeName));
       options = arrayProjectionCompletions(ctx.typeName, ctx.before, query);
       break;
     }
 
     case "inline-conditional": {
-      optimisticallyResolveTypeRefs(ctx.typeName);
+      resolvesTriggered.push(...optimisticallyResolveTypeRefs(ctx.typeName));
       options = inlineConditionalCompletions(ctx.typeName, query);
       break;
     }
@@ -1587,7 +1612,7 @@ export function groqCompletionSource(
     }
 
     case "at-scope": {
-      if (ctx.typeName) optimisticallyResolveTypeRefs(ctx.typeName);
+      if (ctx.typeName) resolvesTriggered.push(...optimisticallyResolveTypeRefs(ctx.typeName));
       options = atScopeCompletions(ctx.typeName, query);
       break;
     }
@@ -1674,11 +1699,34 @@ export function groqCompletionSource(
     }
   }
 
-  if (options.length === 0) return null;
+  if (options.length === 0) {
+    FlightRecorder.instance.recordAutocomplete({
+      before,
+      query,
+      context: ctx,
+      fieldTypesBefore,
+      fieldTypesAfter: captureFieldTypes(),
+      options: [],
+      resolvesTriggered,
+    });
+    return null;
+  }
 
-  return {
+  const result: CompletionResult = {
     from,
     options,
     validFor: /^$|^[a-zA-Z_*@^$][a-zA-Z0-9_$-]*$/u,
   };
+
+  FlightRecorder.instance.recordAutocomplete({
+    before,
+    query,
+    context: ctx,
+    fieldTypesBefore,
+    fieldTypesAfter: captureFieldTypes(),
+    options: result.options.map((o) => ({ label: o.label, detail: o.detail ?? "" })),
+    resolvesTriggered,
+  });
+
+  return result;
 }

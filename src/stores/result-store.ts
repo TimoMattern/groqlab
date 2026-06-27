@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { FlightRecorder } from "@/lib/flight-recorder";
 
 interface ResultState {
   data: unknown;
@@ -21,17 +22,21 @@ export const useResultStore = create<ResultState>((set) => ({
 
   setResult: (data, durationMs, documentCount) => {
     set({ data, durationMs, documentCount, error: null, isLoading: false });
+    FlightRecorder.instance.recordSnapshot("after-action");
   },
 
   setError: (error) => {
     set({ error, data: null, durationMs: null, documentCount: null, isLoading: false });
+    FlightRecorder.instance.recordSnapshot("after-action");
   },
 
   setLoading: (isLoading) => {
     set({ isLoading });
+    FlightRecorder.instance.recordSnapshot("after-action");
   },
 
   clear: () => {
     set({ data: null, durationMs: null, documentCount: null, error: null, isLoading: false });
+    FlightRecorder.instance.recordSnapshot("after-action");
   },
 }));

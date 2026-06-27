@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { ConnectionConfig, ConnectionStatus, ConnectionStatusValue } from "@/lib/sanity-types";
+import { FlightRecorder } from "@/lib/flight-recorder";
 
 const STORAGE_KEY = "groqlab:connections";
 const ACTIVE_KEY = "groqlab:activeId";
@@ -100,6 +101,7 @@ export const useConnectionStore = create<ConnectionState>((set) => {
         saveConnections(connections);
         return { connections, statuses };
       });
+      FlightRecorder.instance.recordSnapshot("after-action");
     },
 
     updateConnection: (id, updates) => {
@@ -110,6 +112,7 @@ export const useConnectionStore = create<ConnectionState>((set) => {
         saveConnections(connections);
         return { connections };
       });
+      FlightRecorder.instance.recordSnapshot("after-action");
     },
 
     removeConnection: (id) => {
@@ -125,16 +128,19 @@ export const useConnectionStore = create<ConnectionState>((set) => {
         try { localStorage.removeItem(STATUS_KEY_PREFIX + id); } catch { /* ignore */ }
         return { connections, activeId, statuses };
       });
+      FlightRecorder.instance.recordSnapshot("after-action");
     },
 
     setActive: (id) => {
       saveActiveId(id);
       set({ activeId: id });
+      FlightRecorder.instance.recordSnapshot("after-action");
     },
 
     setConnections: (connections) => {
       saveConnections(connections);
       set({ connections });
+      FlightRecorder.instance.recordSnapshot("after-action");
     },
 
     setConnectionStatus: (id, status) => {
@@ -142,6 +148,7 @@ export const useConnectionStore = create<ConnectionState>((set) => {
       set((state) => ({
         statuses: { ...state.statuses, [id]: status },
       }));
+      FlightRecorder.instance.recordSnapshot("after-action");
     },
   };
 });
