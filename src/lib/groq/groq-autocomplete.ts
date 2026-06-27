@@ -155,6 +155,40 @@ function triggerRefResolve(fieldName: string): void {
   }
 }
 
+/**
+ * Optimistically resolve all unresolved reference fields in the given type.
+ * Fires parallel resolveRef calls so that when the user drills into
+ * reference fields (via -> or .), the target types are already resolved.
+ */
+function optimisticallyResolveTypeRefs(typeName: string): void {
+  const conn = getActiveConnection();
+  if (!conn) return;
+  const store = useSchemaStore.getState();
+  const types = store.getTypes(conn.id);
+  if (!types || types.length === 0) return;
+
+  const t = types.find((t) => t.name === typeName);
+  if (!t) return;
+
+  const paths: string[] = [];
+  const collectPaths = (fields: SchemaField[], basePath: string): void => {
+    for (const f of fields) {
+      const currentPath = basePath ? `${basePath}.${f.name}` : f.name;
+      if (f.isReference && f.type === "reference") {
+        paths.push(currentPath);
+      }
+      if (f.fields) {
+        collectPaths(f.fields, currentPath);
+      }
+    }
+  };
+  collectPaths(t.fields, "");
+
+  for (const fieldPath of paths) {
+    store.resolveRef(conn.id, conn, t.name, fieldPath);
+  }
+}
+
 function findReferenceTargetType(fieldName: string): SchemaType | undefined {
   const types = getSchemaTypes();
   const searchFields = (fields: SchemaField[]): SchemaField | undefined => {
@@ -1410,6 +1444,7 @@ export function groqCompletionSource(
     }
 
     case "projection": {
+      if (ctx.typeName) optimisticallyResolveTypeRefs(ctx.typeName);
       options = projectionCompletions(ctx.typeName, ctx.before, query);
       if (options.length === 0 && !explicit) return null;
       break;
@@ -1443,21 +1478,25 @@ export function groqCompletionSource(
     }
 
     case "deref": {
+      if (ctx.typeName) optimisticallyResolveTypeRefs(ctx.typeName);
       options = derefCompletions(ctx.typeName, query);
       break;
     }
 
     case "dot-access": {
+      if (ctx.typeName) optimisticallyResolveTypeRefs(ctx.typeName);
       options = dotAccessCompletions(ctx.typeName, query);
       break;
     }
 
     case "array-projection": {
+      if (ctx.typeName) optimisticallyResolveTypeRefs(ctx.typeName);
       options = arrayProjectionCompletions(ctx.typeName, ctx.before, query);
       break;
     }
 
     case "inline-conditional": {
+      optimisticallyResolveTypeRefs(ctx.typeName);
       options = inlineConditionalCompletions(ctx.typeName, query);
       break;
     }
@@ -1473,6 +1512,7 @@ export function groqCompletionSource(
     }
 
     case "at-scope": {
+      if (ctx.typeName) optimisticallyResolveTypeRefs(ctx.typeName);
       options = atScopeCompletions(ctx.typeName, query);
       break;
     }
