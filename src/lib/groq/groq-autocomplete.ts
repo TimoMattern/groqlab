@@ -55,7 +55,7 @@ type CompletionCtx =
   | { kind: "array-traversal"; before: string }
   | { kind: "collate-arg" }
   | { kind: "path-arg" }
-  | { kind: "object-projection"; fields: { name: string; type: string }[] }
+  | { kind: "object-projection"; fields: { name: string; type: string }[]; typeName?: string; fieldName?: string }
   | { kind: "none" };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -177,9 +177,54 @@ export function collectUnresolvedRefPaths(fields: SchemaField[]): string[] {
 }
 
 /**
+ * Try to resolve a reference field synchronously using convention-based matching.
+ * Checks Sanity invariants and field-name-to-type-name convention.
+ * Mutates field.type in-place if a match is found.
+ */
+function trySyncRefResolve(type: SchemaType, fieldPath: string, allTypes: SchemaType[]): boolean {
+  const segments = fieldPath.split(".");
+  let field: SchemaField | undefined;
+  let parentField: SchemaField | undefined;
+  let currentFields = type.fields;
+  for (let i = 0; i < segments.length; i++) {
+    parentField = field;
+    field = currentFields.find((f) => f.name === segments[i]);
+    if (!field) return false;
+    if (field.isReference && field.type !== "reference" && !field.fields) {
+      const targetType = allTypes.find((t) => t.name === field!.type);
+      currentFields = targetType?.fields ?? [];
+    } else {
+      currentFields = field.fields ?? [];
+    }
+  }
+  if (!field) return false;
+  if (!(field.isReference && field.type === "reference")) return false;
+
+  const fieldName = segments[segments.length - 1];
+
+  const parentName = segments.length > 1 ? segments[segments.length - 2] : undefined;
+  if (fieldName === "asset" && (parentName === "image" || parentField?.type === "image" || type.name === "image")) {
+    field.type = "sanity.imageAsset";
+    return true;
+  }
+  if (fieldName === "asset" && (parentName === "file" || parentField?.type === "file" || type.name === "file")) {
+    field.type = "sanity.fileAsset";
+    return true;
+  }
+
+  if (allTypes.some((t) => t.name === fieldName)) {
+    field.type = fieldName;
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Optimistically resolve all unresolved reference fields in the given type.
- * Fires parallel resolveRef calls so that when the user drills into
- * reference fields (via -> or .), the target types are already resolved.
+ * First tries synchronous convention-based resolution so completions show
+ * resolved type names immediately, then fires async API resolution for
+ * authoritative type info.
  */
 function optimisticallyResolveTypeRefs(typeName: string): void {
   const conn = getActiveConnection();
@@ -192,6 +237,21 @@ function optimisticallyResolveTypeRefs(typeName: string): void {
   if (!t) return;
 
   const paths = collectUnresolvedRefPaths(t.fields);
+  if (paths.length === 0) return;
+
+  // Sync convention-based resolution first — updates field.type in-place
+  // so that completion providers reading fieldDetail() see resolved types.
+  let changed = false;
+  for (const fieldPath of paths) {
+    if (trySyncRefResolve(t, fieldPath, types)) {
+      changed = true;
+    }
+  }
+  if (changed) {
+    store.setTypes(conn.id, [...types]);
+  }
+
+  // Fire async API-based resolution for authoritative type info
   for (const fieldPath of paths) {
     store.resolveRef(conn.id, conn, t.name, fieldPath);
   }
@@ -421,6 +481,7 @@ function skipStringAndParen(s: string): string {
 
 function resolveArrayFieldType(
   field: SchemaField,
+  parentTypeName?: string,
 ): CompletionCtx | undefined {
   if (!field.isArray) return undefined;
 
@@ -433,6 +494,8 @@ function resolveArrayFieldType(
     return {
       kind: "object-projection",
       fields: field.fields.map((f) => ({ name: f.name, type: fieldDetail(f) })),
+      typeName: parentTypeName,
+      fieldName: field.name,
     };
   }
   // Fallback: try resolving field.type as a type name
@@ -468,7 +531,7 @@ function resolveProjectionWithArrayDeref(
   if (arrDerefArrow) {
     const field = resolvedType.fields.find((f) => f.name === arrDerefArrow[1]);
     if (field) {
-      const resolved = resolveArrayFieldType(field);
+      const resolved = resolveArrayFieldType(field, typeName);
       if (resolved) return resolved;
     }
     return { kind: "projection", typeName, before };
@@ -481,7 +544,7 @@ function resolveProjectionWithArrayDeref(
   if (arrDeref) {
     const field = resolvedType.fields.find((f) => f.name === arrDeref[1]);
     if (field) {
-      const resolved = resolveArrayFieldType(field);
+      const resolved = resolveArrayFieldType(field, typeName);
       if (resolved) return resolved;
     }
   }
@@ -717,7 +780,9 @@ export function detectContext(before: string): CompletionCtx {
       if (plainFieldMatch) {
         const subFields = findFieldSubFields(plainFieldMatch[1]);
         if (subFields) {
-          return { kind: "object-projection", fields: subFields };
+          const typeFilterMatch = textBeforeBrace.match(/_type\s*==\s*([""'])([^"']+)\1\s*\]/);
+          const parentTypeName = typeFilterMatch ? typeFilterMatch[2] : undefined;
+          return { kind: "object-projection", fields: subFields, typeName: parentTypeName, fieldName: plainFieldMatch[1] };
         }
       }
 
@@ -1459,7 +1524,9 @@ export function groqCompletionSource(
     }
 
     case "object-projection": {
-      options = objectProjectionCompletions(ctx.fields, query);
+      if (ctx.typeName) optimisticallyResolveTypeRefs(ctx.typeName);
+      const liveFields = ctx.fieldName ? findFieldSubFields(ctx.fieldName) ?? ctx.fields : ctx.fields;
+      options = objectProjectionCompletions(liveFields, query);
       if (options.length === 0 && !explicit) return null;
       break;
     }

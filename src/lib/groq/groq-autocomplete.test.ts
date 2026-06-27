@@ -472,6 +472,87 @@ describe("groq-autocomplete", () => {
         if (castOption) expect(castOption.detail).toBe("array[]");
       }
     });
+
+    it("resolves ref types synchronously via convention before building projection completions", () => {
+      const conn = makeConn("sync");
+      useConnectionStore.setState({ connections: [conn], activeId: conn.id });
+      useSchemaStore.getState().setTypes(conn.id, [
+        {
+          name: "post",
+          title: "Post",
+          fields: [
+            { name: "title", type: "string", isArray: false, isReference: false },
+            { name: "author", type: "reference", isArray: false, isReference: true },
+          ],
+        },
+        {
+          name: "author",
+          title: "Author",
+          fields: [
+            { name: "name", type: "string", isArray: false, isReference: false },
+            { name: "email", type: "string", isArray: false, isReference: false },
+          ],
+        },
+      ]);
+      const ctx = createContext('*[_type == "post"]{', '*[_type == "post"]{'.length);
+      const result = groqCompletionSource(ctx);
+      expect(result).toBeTruthy();
+      if (result) {
+        const authorOption = result.options.find((o) => o.label === "author");
+        expect(authorOption).toBeDefined();
+        if (authorOption) {
+          expect(authorOption.detail).toBe("author ->");
+        }
+      }
+    });
+
+    it("resolves sanity.imageAsset ref synchronously via invariant inside projection", () => {
+      const conn = makeConn("sync2");
+      useConnectionStore.setState({ connections: [conn], activeId: conn.id });
+      useSchemaStore.getState().setTypes(conn.id, [
+        {
+          name: "post",
+          title: "Post",
+          fields: [
+            { name: "title", type: "string", isArray: false, isReference: false },
+            {
+              name: "image",
+              type: "image",
+              isArray: false,
+              isReference: false,
+              fields: [
+                { name: "asset", type: "reference", isArray: false, isReference: true },
+                { name: "alt", type: "string", isArray: false, isReference: false },
+              ],
+            },
+          ],
+        },
+        {
+          name: "author",
+          title: "Author",
+          fields: [
+            { name: "name", type: "string", isArray: false, isReference: false },
+          ],
+        },
+        {
+          name: "sanity.imageAsset",
+          title: "Image Asset",
+          fields: [
+            { name: "url", type: "string", isArray: false, isReference: false },
+          ],
+        },
+      ]);
+      // Trigger projection context for the post type — this should
+      // sync-resolve image.asset to sanity.imageAsset via the Sanity invariant.
+      const ctx = createContext('*[_type == "post"]{', '*[_type == "post"]{'.length);
+      groqCompletionSource(ctx);
+      // After sync resolution, the store should have updated image.asset's type
+      const types = useSchemaStore.getState().getTypes(conn.id);
+      const postType = types.find((t) => t.name === "post")!;
+      const imageField = postType.fields.find((f) => f.name === "image")!;
+      const assetField = imageField.fields!.find((f) => f.name === "asset")!;
+      expect(assetField.type).toBe("sanity.imageAsset");
+    });
   });
 
   describe("cheat sheet query patterns", () => {
