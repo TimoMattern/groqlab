@@ -156,6 +156,27 @@ function triggerRefResolve(fieldName: string): void {
 }
 
 /**
+ * Collect all unresolved reference field paths in a field tree.
+ * Returns dot-separated paths relative to the parent type (e.g. ["poster", "castMembers", "poster.asset"]).
+ */
+export function collectUnresolvedRefPaths(fields: SchemaField[]): string[] {
+  const paths: string[] = [];
+  const walk = (fs: SchemaField[], basePath: string): void => {
+    for (const f of fs) {
+      const currentPath = basePath ? `${basePath}.${f.name}` : f.name;
+      if (f.isReference && f.type === "reference") {
+        paths.push(currentPath);
+      }
+      if (f.fields) {
+        walk(f.fields, currentPath);
+      }
+    }
+  };
+  walk(fields, "");
+  return paths;
+}
+
+/**
  * Optimistically resolve all unresolved reference fields in the given type.
  * Fires parallel resolveRef calls so that when the user drills into
  * reference fields (via -> or .), the target types are already resolved.
@@ -170,20 +191,7 @@ function optimisticallyResolveTypeRefs(typeName: string): void {
   const t = types.find((t) => t.name === typeName);
   if (!t) return;
 
-  const paths: string[] = [];
-  const collectPaths = (fields: SchemaField[], basePath: string): void => {
-    for (const f of fields) {
-      const currentPath = basePath ? `${basePath}.${f.name}` : f.name;
-      if (f.isReference && f.type === "reference") {
-        paths.push(currentPath);
-      }
-      if (f.fields) {
-        collectPaths(f.fields, currentPath);
-      }
-    }
-  };
-  collectPaths(t.fields, "");
-
+  const paths = collectUnresolvedRefPaths(t.fields);
   for (const fieldPath of paths) {
     store.resolveRef(conn.id, conn, t.name, fieldPath);
   }

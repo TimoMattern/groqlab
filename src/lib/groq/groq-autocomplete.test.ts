@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { CompletionContext, snippet } from "@codemirror/autocomplete";
-import { groqCompletionSource } from "./groq-autocomplete";
+import { groqCompletionSource, collectUnresolvedRefPaths } from "./groq-autocomplete";
 import { SNIPPET_COMPLETIONS } from "./groq-completions";
 import { useConnectionStore } from "@/stores/connection-store";
 import { useSchemaStore } from "@/stores/schema-store";
-import type { SchemaType } from "@/lib/sanity-types";
+import type { SchemaType, SchemaField } from "@/lib/sanity-types";
 
 function createContext(doc: string, pos: number, explicit = false) {
   const state = EditorState.create({ doc });
@@ -1347,5 +1347,82 @@ describe("groq-autocomplete", () => {
         expect(labels).toContain("bio");
       }
     });
+  });
+});
+
+describe("collectUnresolvedRefPaths", () => {
+  it("returns empty array for fields with no refs", () => {
+    const fields: SchemaField[] = [
+      { name: "title", type: "string", isArray: false, isReference: false },
+      { name: "score", type: "number", isArray: false, isReference: false },
+    ];
+    expect(collectUnresolvedRefPaths(fields)).toEqual([]);
+  });
+
+  it("collects top-level unresolved refs", () => {
+    const fields: SchemaField[] = [
+      { name: "title", type: "string", isArray: false, isReference: false },
+      { name: "poster", type: "reference", isArray: false, isReference: true },
+      { name: "actor", type: "reference", isArray: false, isReference: true },
+    ];
+    expect(collectUnresolvedRefPaths(fields)).toEqual(["poster", "actor"]);
+  });
+
+  it("skips resolved refs (type !== 'reference')", () => {
+    const fields: SchemaField[] = [
+      { name: "poster", type: "sanity.imageAsset", isArray: false, isReference: true },
+    ];
+    expect(collectUnresolvedRefPaths(fields)).toEqual([]);
+  });
+
+  it("collects nested unresolved refs inside object fields", () => {
+    const fields: SchemaField[] = [
+      {
+        name: "metadata",
+        type: "object",
+        isArray: false,
+        isReference: false,
+        fields: [
+          { name: "author", type: "reference", isArray: false, isReference: true },
+        ],
+      },
+    ];
+    expect(collectUnresolvedRefPaths(fields)).toEqual(["metadata.author"]);
+  });
+
+  it("collects array refs", () => {
+    const fields: SchemaField[] = [
+      { name: "castMembers", type: "reference", isArray: true, isReference: true },
+    ];
+    expect(collectUnresolvedRefPaths(fields)).toEqual(["castMembers"]);
+  });
+
+  it("collects multiple nested paths", () => {
+    const fields: SchemaField[] = [
+      { name: "poster", type: "reference", isArray: false, isReference: true },
+      {
+        name: "seo",
+        type: "object",
+        isArray: false,
+        isReference: false,
+        fields: [
+          { name: "image", type: "reference", isArray: false, isReference: true },
+          {
+            name: "metadata",
+            type: "object",
+            isArray: false,
+            isReference: false,
+            fields: [
+              { name: "author", type: "reference", isArray: false, isReference: true },
+            ],
+          },
+        ],
+      },
+    ];
+    expect(collectUnresolvedRefPaths(fields)).toEqual([
+      "poster",
+      "seo.image",
+      "seo.metadata.author",
+    ]);
   });
 });

@@ -15,10 +15,11 @@ Fix schema inference reliability problems — missing built-in type sub-fields a
 
 ## Design: Optimistic Resolution (Auto-Resolve on Expand)
 
-No pre-resolution of ALL references after schema fetch. Instead, two triggers fire resolves only for refs the user is likely to interact with:
+No pre-resolution of ALL references after schema fetch. Instead, three triggers fire resolves only for refs the user is likely to interact with:
 
 1. **Schema panel expand**: When a parent type or field row is expanded, every unresolved ref in its entire subtree auto-resolves in the background. The user sees `ref(…)` transition to `ref(typeName)` without clicking the ref itself.
-2. **Autocomplete `->`**: When the user types `->` after a field name and the ref is unresolved, a fire-and-forget resolve fires. The current keystroke shows no completions for that ref, but the next keystroke (which happens >7ms later per the query benchmark) finds the resolved type.
+2. **Autocomplete type-aware contexts**: When the autocomplete identifies a type from the query context (projection `{…}`, dot-access `].`, deref `->`, inline-conditional `=> {`, `@.` scope, or array-projection `[]{}`), it eagerly fires `resolveRef` for **every** unresolved reference field in that type — not just the one the user is currently typing. This way all refs in the type are warming in parallel before the user drills into any of them.
+3. **Autocomplete `->` fallback**: When `->` is typed and `findReferenceTargetType` fails synchronously, `triggerRefResolve(fieldName)` fires a resolve for that specific field (same as before, guards the case where the type wasn't yet resolved through eager resolution).
 
 ```
 Schema fetch:
@@ -33,7 +34,17 @@ User expands a type/field:
   │    re-render: ref(…) → ref(typeName)   (no click needed)
   └─ user clicks ref → expanded = true, fields visible
 
-User types movie.poster->:
+Projection/dot-access context triggers eager type ref resolution:
+  ┌─ detectContext → typeName = "movie" (from _type filter)
+  │    groqCompletionSource dispatches to case "projection"
+  │    optimisticallyResolveTypeRefs("movie")
+  │      └─ collectUnresolvedRefPaths → ["poster", "castMembers"]
+  │           for each: resolveRef ──► GROQ _type query (fire-and-forget)
+  │    returns completion list immediately (fields may still show ref(…))
+  └─ next keystroke → poster and castMembers already resolved
+       → completions show resolved type names
+
+User types `->` and type wasn't yet resolved (fallback):
   ┌─ detectContext → findReferenceTargetType("poster") → undefined
   │    triggerRefResolve("poster")  ──► fire-and-forget resolveRef
   │    returns { kind: "deref", typeName: "" }  (no completions this keystroke)
@@ -41,9 +52,9 @@ User types movie.poster->:
        → completions work
 ```
 
-**Why not eager pre-resolve:** Eagerly resolving ALL reference fields after schema fetch means paying for queries for refs the user may never expand. Optimistic resolution only pays for refs in types/fields the user actually expands or types `->` for.
+**Why not eager pre-resolve ALL:** Eagerly resolving ALL reference fields after schema fetch means paying for queries for refs the user may never expand. Optimistic resolution only pays for refs in types/fields the user actually expands or types queries for.
 
-**Why autocomplete needs the trigger:** The autocomplete is synchronous — it reads the in-memory store on every keystroke. By firing `resolveRef` when `->` encounters an unresolved ref, the query (typically <10ms) completes before the user's next keystroke. The delay is invisible.
+**Why autocomplete needs the triggers:** The autocomplete is synchronous — it reads the in-memory store on every keystroke. By firing `resolveRef` when a type is identified or `->` encounters an unresolved ref, the query (typically <10ms) completes before the user's next keystroke. The delay is invisible. The eager type-ref resolution (trigger 2) is strictly better than single-field resolution (trigger 3) because it resolves all refs in one batch, so the user can freely drill into any field.
 
 ### The GROQ Query
 
@@ -92,8 +103,9 @@ resolveRef(connectionId, conn, parentTypeName, fieldPath):
 
 **Autocomplete** (`src/lib/groq/groq-autocomplete.ts`):
 
-- `triggerRefResolve(fieldName)` → searches all types for any field with `name === fieldName && isReference && type === "reference"`, fires `resolveRef` for each match (fire-and-forget)
-- Called after `findReferenceTargetType` fails in each `->` detection context (standalone, inside projection, `->{}` projection, `[]->` array deref)
+- `triggerRefResolve(fieldName)` → searches all types for any field with `name === fieldName && isReference && type === "reference"`, fires `resolveRef` for each match (fire-and-forget). Called after `findReferenceTargetType` fails in each `->` detection context (standalone, inside projection, `->{}` projection, `[]->` array deref).
+- `collectUnresolvedRefPaths(fields)` → exported pure function; recursively walks a field tree and returns all dot-separated paths where `isReference && type === "reference"`.
+- `optimisticallyResolveTypeRefs(typeName)` → finds the type by name, calls `collectUnresolvedRefPaths` on its fields, fires `resolveRef` for each path. Called in `groqCompletionSource` for every type-aware context (`projection`, `dot-access`, `deref`, `inline-conditional`, `at-scope`, `array-projection`) before completions are computed.
 
 ### Built-in Types
 
@@ -132,7 +144,8 @@ User types field-> in editor:
 5. **`resolveRef` in schema store** — single-ref JIT action with null filtering + nested field path traversal
 6. **SchemaPanel** — `collectUnresolvedRefs` helper + auto-resolve `useEffect` in `TypeRow` and `FieldRow`
 7. **Autocomplete** — `triggerRefResolve` helper fired in all `->` detection paths
-8. **Updated tests** — inference tests reflect "reference" type instead of prefix-based type
+8. **Autocomplete** — `optimisticallyResolveTypeRefs` fired eagerly in type-aware contexts (projection, dot-access, deref, inline-conditional, at-scope, array-projection)
+9. **Updated tests** — inference tests reflect "reference" type instead of prefix-based type; `collectUnresolvedRefPaths` unit tests
 
 ## Lessons Learned
 
@@ -153,3 +166,5 @@ User types field-> in editor:
 8. **`parentTypeName` is just as important as `parentField?.type` in fallback checks**: A single-segment path like `asset` has no `parentField` (only one segment), so the invariant fallback must also check `parentTypeName`. Without this, expanding the `image` object type's `asset` field would never resolve because `*[_type == "image"]` returns `[]` (object types aren't documents).
 
 9. **Test the static fallbacks alongside the primary flow**: The auto-resolve tests in SchemaPanel verify that `resolveRef` is called on expand, and the static fallbacks fire correctly when GROQ is unavailable (as it is in test environments). These tests caught the `parentTypeName` gap immediately.
+
+10. **Eager type-ref resolution in autocomplete is strictly better than single-field fallback**: Once the type of a projection/deref/dot-access is known, resolving all its refs in one batch costs no more than resolving one (parallel API calls), and means the user never hits the one-keystroke lag when drilling into any ref field. The `->` fallback (`triggerRefResolve`) still exists for edge cases where the type couldn't be determined.
