@@ -1,11 +1,11 @@
 import { CompletionContext, CompletionResult, snippet } from "@codemirror/autocomplete";
 import type { Completion } from "@codemirror/autocomplete";
+import type { ConnectionConfig, SchemaType, SchemaField } from "@/lib/sanity-types";
 import {
   ALL_COMPLETIONS,
   PIPELINE_STAGE_COMPLETIONS,
   SCORE_CONTEXT_COMPLETIONS,
   ORDER_COMPLETIONS,
-  SELECT_COMPLETIONS,
   LOCALE_COMPLETIONS,
   PARAM_COMPLETIONS,
   GLOB_COMPLETIONS,
@@ -21,7 +21,6 @@ import {
 import type { GroqCompletion } from "./groq-completions";
 import { useSchemaStore } from "@/stores/schema-store";
 import { getActiveConnection } from "@/stores/connection-store";
-import type { SchemaField, SchemaType } from "@/lib/sanity-types";
 import { FlightRecorder } from "@/lib/flight-recorder";
 
 // ─── Context types ───────────────────────────────────────────────────────────
@@ -218,6 +217,17 @@ function trySyncRefResolve(type: SchemaType, fieldPath: string, allTypes: Schema
     return true;
   }
 
+  // Fuzzy match: check if any type's last segment matches the field name
+  // Handles cases like fieldName="imageAsset" matching type "sanity.imageAsset"
+  const fuzzyMatch = allTypes.find((t) => {
+    const seg = t.name.split(".").pop() || "";
+    return seg.toLowerCase().startsWith(fieldName.toLowerCase());
+  });
+  if (fuzzyMatch) {
+    field.type = fuzzyMatch.name;
+    return true;
+  }
+
   return false;
 }
 
@@ -258,6 +268,39 @@ function optimisticallyResolveTypeRefs(typeName: string): string[] {
   }
 
   return paths;
+}
+
+/**
+ * Eagerly resolve all unresolved reference fields in the background.
+ * Called right after schema load so refs are ready before the user triggers autocomplete.
+ * Fires async resolveRef for each unresolved ref across all types.
+ */
+export function eagerlyResolveAllRefs(
+  connectionId: string,
+  conn: ConnectionConfig,
+  types: SchemaType[],
+): void {
+  const store = useSchemaStore.getState();
+  const collectPaths = (fields: SchemaField[], path: string): string[] => {
+    const paths: string[] = [];
+    for (const f of fields) {
+      const currentPath = path ? `${path}.${f.name}` : f.name;
+      if (f.isReference && f.type === "reference") {
+        paths.push(currentPath);
+      }
+      if (f.fields) {
+        paths.push(...collectPaths(f.fields, currentPath));
+      }
+    }
+    return paths;
+  };
+
+  for (const t of types) {
+    const paths = collectPaths(t.fields, "");
+    for (const fieldPath of paths) {
+      store.resolveRef(connectionId, conn, t.name, fieldPath);
+    }
+  }
 }
 
 function captureFieldTypes(): Record<string, string> {

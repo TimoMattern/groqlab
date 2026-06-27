@@ -2,6 +2,8 @@ import { useCallback, useEffect } from "react";
 import { fetchSchema } from "@/lib/sanity-api";
 import { useSchemaStore } from "@/stores/schema-store";
 import { useConnectionStore, getActiveConnection } from "@/stores/connection-store";
+import { eagerlyResolveAllRefs } from "@/lib/groq/groq-autocomplete";
+import type { SchemaType } from "@/lib/sanity-types";
 
 export function useSchema() {
   const activeId = useConnectionStore((s) => s.activeId);
@@ -22,6 +24,7 @@ export function useSchema() {
       try {
         const result = await fetchSchema(connection);
         setTypes(connectionId, result);
+        eagerlyResolveAllRefs(connectionId, connection, result as SchemaType[]);
       } catch (e: unknown) {
         const err = e as { kind?: string; message?: string };
         setError(connectionId, err.message ?? "Failed to load schema");

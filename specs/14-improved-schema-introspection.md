@@ -15,7 +15,7 @@ Fix schema inference reliability problems — missing built-in type sub-fields a
 
 ## Design: Optimistic Resolution (Auto-Resolve on Expand)
 
-No pre-resolution of ALL references after schema fetch. Instead, three triggers fire resolves only for refs the user is likely to interact with:
+Refs are eagerly pre-resolved after schema fetch (all unresolved refs fire GROQ queries in parallel during schema load). Three additional triggers also fire resolves for refs the user is likely to interact with:
 
 1. **Schema panel expand**: When a parent type or field row is expanded, every unresolved ref in its entire subtree auto-resolves in the background. The user sees `ref(…)` transition to `ref(typeName)` without clicking the ref itself.
 2. **Autocomplete type-aware contexts**: When the autocomplete identifies a type from the query context (projection `{…}`, dot-access `].`, deref `->`, inline-conditional `=> {`, `@.` scope, or array-projection `[]{}`), it eagerly fires `resolveRef` for **every** unresolved reference field in that type — not just the one the user is currently typing. This way all refs in the type are warming in parallel before the user drills into any of them.
@@ -25,6 +25,8 @@ No pre-resolution of ALL references after schema fetch. Instead, three triggers 
 Schema fetch:
   POST /api/schema ────── inferFields (refs are "reference")
   ├─ types stored in store
+  ├─ eagerlyResolveAllRefs() fired for ALL unresolved refs (fire-and-forget, parallel)
+  │    └─ resolveRef queries start warming in background
   └─ schema panel renders refs as "ref(…)" with chevron
 
 User expands a type/field:
@@ -52,7 +54,7 @@ User types `->` and type wasn't yet resolved (fallback):
        → completions work
 ```
 
-**Why not eager pre-resolve ALL:** Eagerly resolving ALL reference fields after schema fetch means paying for queries for refs the user may never expand. Optimistic resolution only pays for refs in types/fields the user actually expands or types queries for.
+**Why eager pre-resolve ALL:** Initially deferred to avoid paying for queries the user never needs. But the cold-start problem made the first autocomplete always show `reference ->` for fields like `author→person` where field name ≠ type name. Since most datasets have <50 refs total (each a ~10ms GROQ query), the cost is negligible and the queries start during schema load — before the user even sees the page. The fix: `eagerlyResolveAllRefs()` fires `resolveRef` for every unresolved ref in parallel after `setTypes`. By the time the user types, most refs are already resolved.
 
 **Why autocomplete needs the triggers:** The autocomplete is synchronous — it reads the in-memory store on every keystroke. By firing `resolveRef` when a type is identified or `->` encounters an unresolved ref, the query (typically <10ms) completes before the user's next keystroke. The delay is invisible. The eager type-ref resolution (trigger 2) is strictly better than single-field resolution (trigger 3) because it resolves all refs in one batch, so the user can freely drill into any field.
 
@@ -145,7 +147,8 @@ User types field-> in editor:
 6. **SchemaPanel** — `collectUnresolvedRefs` helper + auto-resolve `useEffect` in `TypeRow` and `FieldRow`
 7. **Autocomplete** — `triggerRefResolve` helper fired in all `->` detection paths
 8. **Autocomplete** — `optimisticallyResolveTypeRefs` fired eagerly in type-aware contexts (projection, dot-access, deref, inline-conditional, at-scope, array-projection)
-9. **Updated tests** — inference tests reflect "reference" type instead of prefix-based type; `collectUnresolvedRefPaths` unit tests
+9. **`eagerlyResolveAllRefs` in useSchema** — after `setTypes`, walks every type and fires `resolveRef` for all unresolved refs in parallel. Gives async GROQ queries a head start before user interaction.
+10. **Updated tests** — inference tests reflect "reference" type instead of prefix-based type; `collectUnresolvedRefPaths` unit tests
 
 ## Lessons Learned
 
@@ -168,3 +171,5 @@ User types field-> in editor:
 9. **Test the static fallbacks alongside the primary flow**: The auto-resolve tests in SchemaPanel verify that `resolveRef` is called on expand, and the static fallbacks fire correctly when GROQ is unavailable (as it is in test environments). These tests caught the `parentTypeName` gap immediately.
 
 10. **Eager type-ref resolution in autocomplete is strictly better than single-field fallback**: Once the type of a projection/deref/dot-access is known, resolving all its refs in one batch costs no more than resolving one (parallel API calls), and means the user never hits the one-keystroke lag when drilling into any ref field. The `->` fallback (`triggerRefResolve`) still exists for edge cases where the type couldn't be determined.
+
+11. **Cold-start pre-resolve ALL after schema load fixes the first-autocomplete `reference ->` bug**: The initial "no eager pre-resolve" design was correct in spirit (avoid unnecessary API calls) but created a UX problem: the first autocomplete always showed `reference ->` for non-convention refs like `author→person`, because the async `resolveRef` fires during autocomplete but hasn't returned yet. Moving resolve to schema load gives it a 2–15s head start, making it effectively synchronous from the user's perspective. The cost is negligible — typical datasets have <50 refs, each query is ~10ms, and they fire in parallel. The risk is also low: refs that the user never explores still get resolved, but the stale result is harmless (the type is correct once resolved). Also improved `trySyncRefResolve` with fuzzy last-segment matching (e.g., `imageAsset` → `sanity.imageAsset`) to catch dotted-name conventions synchronously.
