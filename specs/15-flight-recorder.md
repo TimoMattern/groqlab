@@ -31,6 +31,7 @@ type FlightEvent =
   | ActionEvent
   | ApiCallEvent
   | AutocompleteEvent
+  | AutocompleteSelectionEvent
   | InputEvent
   | UserEvent;
 
@@ -85,6 +86,14 @@ interface AutocompleteEvent {
   fieldTypesAfter: Record<string, string>;   // field -> type after resolve attempt
   options: { label: string; detail: string }[];
   resolvesTriggered: string[];  // fieldPaths passed to resolveRef
+  selectedIndex: number;        // initially selected suggestion (always 0)
+}
+
+interface AutocompleteSelectionEvent {
+  type: "autocomplete-selection";
+  ts: number;
+  selectedIndex: number;        // index of the newly selected suggestion
+  totalOptions: number;         // total options in the dropdown (for display)
 }
 
 interface UserEvent {
@@ -123,6 +132,7 @@ interface FlightCommand {
 | `schema.setTypes` | `{ types: SchemaType[] }` | Replaces types in store |
 | `autocomplete.trigger` | `{ before: string }` | Runs groqCompletionSource and returns result |
 | `autocomplete.detectContext` | `{ before: string }` | Runs detectContext and returns context |
+| `autocomplete.selectSuggestion` | `{ index: number }` | Programmatically sets the selected suggestion in the open autocomplete panel (browser-only, requires editor view) |
 | `recording.start` | `{ intervalMs?: number }` | Starts recording with optional periodic snapshot interval |
 | `recording.stop` | `{}` | Stops recording |
 | `recording.export` | `{}` | Returns full FlightRecord JSON |
@@ -271,13 +281,16 @@ The replay engine (`src/lib/flight-replay.ts`) treats a `FlightRecord` as an imm
 
 The `activeQuery` is tracked by the `FlightRecorder` singleton via `setActiveQuery(query)` and included in every store snapshot. The `page.tsx` component calls this in a `useEffect` whenever the active query changes.
 
-The `QueryEditor` exposes a `QueryEditorHandle` via `forwardRef`/`useImperativeHandle` with two methods:
+The `QueryEditor` exposes a `QueryEditorHandle` via `forwardRef`/`useImperativeHandle` with three methods:
 - `restoreEditor(text, cursorPos?)`: Dispatches directly to the CodeMirror view (`view.dispatch({ changes, selection })`) — bypasses React props entirely
 - `triggerAutocomplete()`: Calls `startCompletion(view)` from `@codemirror/autocomplete`
+- `selectAutocompleteSuggestion(index)`: Sets the selected suggestion in the open autocomplete panel via `view.dispatch({ effects: setSelectedCompletion(index) })`
 
 The `FlightRecorderPanel` receives `editorRef` directly (rather than separate `replaySetQuery`/`replayTriggerAutocomplete` callbacks) and calls these methods during replay, eliminating React roundtrips for smoother playback.
 
 The replay callbacks include `onRestoreStores(stores)` which is called when a `store-snapshot` event is applied. The panel implements this by calling `useXStore.setState()` for each store with the snapshot data. For the schema store, `fullTypes` (un-summarized `SchemaType[]` preserving `isReference`/`isArray`) is preferred over the summarized `types` field. A backup of all stores is saved before replay starts and restored when the session is destroyed.
+
+The replay sequence for autocomplete with selection tracking works as follows: first an `autocomplete` event opens the panel (`startCompletion`), then one or more `autocomplete-selection` events navigate through suggestions (`selectAutocompleteSuggestion`), and finally an `input` event applies the accepted completion text. Each step is recorded with its own timestamp and replayed with accurate timing.
 
 ## Key Logic
 
@@ -314,9 +327,11 @@ interface Window {
     recorder: FlightRecorder;
     execute: (command: FlightCommand) => Promise<unknown>;
     getState: () => FlightRecord;
-    export: () => string;       // JSON string
-    import: (json: string) => void;  // Load a recording for analysis
-  };
+      export: () => string;       // JSON string
+      import: (json: string) => void;  // Load a recording for analysis
+      selectSuggestion: (index: number) => void;  // Set selected autocomplete suggestion (requires editor ref)
+    };
+  }
 }
 ```
 
@@ -347,4 +362,13 @@ This lets the AI agent (or any script in console) inspect and control the app wi
 - **Store state restoration during replay**: Autocomplete context detection depends on schema types being correct. Without restoring the Zustand store state during replay, autocomplete shows wrong options (using current live types instead of recorded types). The fix: save a backup of all stores before replay starts, restore from `store-snapshot` data during replay (preferring `fullTypes` for perfect `isReference`/`isArray` preservation), and restore the backup on session destroy
 - **`fullTypes` in snapshots**: The `summarizeTypes()` function strips `isReference` and `isArray` from schema types. For replay restoration to work correctly, we store the full un-summarized types alongside the summarized ones as `schemaStore.fullTypes`. Old recordings without `fullTypes` fall back to the summarized `types` — not perfect, but better than using the live session's unrelated types
 - **Zustand `setState` with internal types**: Store state interfaces are not exported. Using `setState({ ... } as unknown as Parameters<typeof useXStore.setState>[0])` bypasses TypeScript while working correctly at runtime because Zustand's `setState` does a shallow merge — only the data fields are replaced, action functions remain untouched
+- **Empty-string queries must not be skipped**: `getEditorTextAtEvent` originally used `if (q) return q` to walk backward through store snapshots. This skipped `activeQuery: ""` (falsy), causing replay to find a stale non-empty query from earlier in the recording instead of clearing the editor. The fix: use `if (q !== undefined)` so empty string is treated as a valid editor state
+- **Same pattern in input events**: `if (txt) return txt` had the same bug — an input event with empty text was skipped. Fixed by returning `(ev as InputEvent).text` unconditionally (it's always defined)
+- **Autocomplete cursor with empty before**: `getCursorPositionAtEvent` used `if (ev.before)` to check for autocomplete events, skipping when `before` was `""`. Changed to `if (ev.type === "autocomplete")` returning `before?.length ?? 0`, so cursor at position 0 is correctly restored
+- **Autocomplete selection tracking**: CodeMirror 6's `selectedCompletionIndex(state)` returns `number | null` — the null case must be handled. Use `selectedCompletionIndex` (int) not `selectedCompletion` (object reference) for comparison, since comparison by reference is fragile across completion list re-generation
+- **`setSelectedCompletion` is a `StateEffect` not a command**: Unlike `moveCompletionSelection` (a `Command`), `setSelectedCompletion(index)` returns a `StateEffect<unknown>` that must be dispatched via `view.dispatch({ effects: setSelectedCompletion(index) })`. Trying to call it as a function with `(view)` would fail
+- **Deduplication of selection events**: The `updateListener` fires on every transaction, including those that only change the autocomplete state (arrow key navigation without doc changes). Track `lastSelectedIdx` locally in the effect closure and diff against `selectedCompletionIndex(state)` to avoid recording duplicate events. Reset the tracker to -1 when autocomplete closes (`completionStatus` not `"active"`)
+- **Session boundary for selection tracking**: When a new autocomplete session starts (new `recordAutocomplete` call), the `_lastSelectedIndex` must be reset to -1 so the first selection (usually 0) is recorded even if the previous session ended at the same index. This is handled by resetting `_lastSelectedIndex = -1` at the start of `recordAutocomplete`
+- **Replay ordering for autocomplete navigation**: The replay sequence must apply `autocomplete-selection` events AFTER the `autocomplete` event (which opens the panel). Since `startCompletion` is synchronous, the panel is ready immediately. The scheduling delay between events during play mode (based on real `ts` deltas) naturally ensures correct ordering
+- **`selectAutocompleteSuggestion` guards**: Before calling `setSelectedCompletion`, validate `0 <= index < completions.length` and skip if the current index already matches. Without these guards, replay could crash when the completion list changed between recording and replay (due to schema differences)
 

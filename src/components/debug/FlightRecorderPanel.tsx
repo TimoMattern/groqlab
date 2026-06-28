@@ -216,6 +216,9 @@ export function FlightRecorderPanel({
         // Cursor already positioned by onSetEditorValue — trigger panel immediately
         editorRef.current?.triggerAutocomplete();
       },
+      onSelectAutocompleteSuggestion: (index: number) => {
+        editorRef.current?.selectAutocompleteSuggestion(index);
+      },
       onRestoreStores: (stores) => {
         restoreStoresFromSnapshot(stores as unknown as Record<string, unknown>);
       },
@@ -576,6 +579,7 @@ function EventIcon({ type }: { type: string }) {
     action: "⚡",
     "api-call": "🌐",
     autocomplete: "✨",
+    "autocomplete-selection": "▼",
     user: "👤",
     input: "⌨️",
   };
@@ -592,6 +596,8 @@ function describeEvent(ev: FlightEvent): string {
       return `${ev.method} ${ev.endpoint} → ${ev.statusCode} (${ev.durationMs}ms)`;
     case "autocomplete":
       return `Autocomplete: "${ev.query}" (${ev.options.length} options)`;
+    case "autocomplete-selection":
+      return `Select suggestion #${ev.selectedIndex + 1}/${ev.totalOptions}`;
     case "user":
       return `${ev.kind}: ${ev.payload.slice(0, 80)}`;
     case "input":
@@ -701,6 +707,7 @@ function EventDetail({ event }: { event: FlightEvent }) {
             <div><span className="text-[var(--muted-foreground)]">Before:</span> <code className="rounded bg-[var(--muted)] px-1">{event.before}</code></div>
             <div><span className="text-[var(--muted-foreground)]">Query:</span> <code className="rounded bg-[var(--muted)] px-1">{event.query}</code></div>
             <div><span className="text-[var(--muted-foreground)]">Context:</span> {event.context.kind}</div>
+            <div><span className="text-[var(--muted-foreground)]">Selected:</span> #{event.selectedIndex + 1} of {event.options.length}</div>
             <div><span className="text-[var(--muted-foreground)]">Resolves triggered:</span> {event.resolvesTriggered.length > 0 ? event.resolvesTriggered.join(", ") : "(none)"}</div>
             {event.options.length > 0 && (
               <details className="mt-1">
@@ -734,6 +741,16 @@ function EventDetail({ event }: { event: FlightEvent }) {
           <div className="space-y-1 text-xs">
             <div><span className="text-[var(--muted-foreground)]">Kind:</span> {event.kind}</div>
             <div><span className="text-[var(--muted-foreground)]">Payload:</span> {event.payload}</div>
+          </div>
+        </div>
+      );
+
+    case "autocomplete-selection":
+      return (
+        <div>
+          {common}
+          <div className="space-y-1 text-xs">
+            <div><span className="text-[var(--muted-foreground)]">Selected:</span> #{event.selectedIndex + 1} of {event.totalOptions}</div>
           </div>
         </div>
       );

@@ -1751,6 +1751,7 @@ export function groqCompletionSource(
       fieldTypesAfter: captureFieldTypes(),
       options: [],
       resolvesTriggered,
+      selectedIndex: 0,
     });
     return null;
   }
@@ -1769,6 +1770,7 @@ export function groqCompletionSource(
     fieldTypesAfter: captureFieldTypes(),
     options: result.options.map((o) => ({ label: o.label, detail: o.detail ?? "" })),
     resolvesTriggered,
+    selectedIndex: 0,
   });
 
   return result;

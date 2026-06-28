@@ -1,4 +1,4 @@
-import type { FlightRecord, FlightEvent, StoreSnapshotEvent, AutocompleteEvent, InputEvent } from "./flight-recorder";
+import type { FlightRecord, FlightEvent, StoreSnapshotEvent, AutocompleteEvent, AutocompleteSelectionEvent, InputEvent } from "./flight-recorder";
 
 export type ReplaySpeed = 0.25 | 0.5 | 1 | 2 | 4;
 
@@ -7,6 +7,7 @@ export interface ReplayCallbacks {
   onHighlightEvent?: (index: number) => void;
   onApiCall?: (event: FlightEvent) => void;
   onAutocomplete?: (event: AutocompleteEvent) => void;
+  onSelectAutocompleteSuggestion?: (index: number) => void;
   onRestoreStores?: (stores: StoreSnapshotEvent["stores"]) => void;
 }
 
@@ -22,13 +23,11 @@ export function getEditorTextAtEvent(
     if (ev.type === "store-snapshot") {
       const stores = (ev as StoreSnapshotEvent).stores;
       if ((stores as Record<string, unknown>).activeQuery !== undefined) {
-        const q = (stores as Record<string, unknown>).activeQuery;
-        if (q) return q as string;
+        return (stores as Record<string, unknown>).activeQuery as string;
       }
     }
     if (ev.type === "input") {
-      const txt = (ev as InputEvent).text;
-      if (txt) return txt;
+      return (ev as InputEvent).text;
     }
   }
   return null;
@@ -40,8 +39,8 @@ export function getCursorPositionAtEvent(
 ): number | null {
   const ev = record.events[eventIndex];
   if (!ev) return null;
-  if (ev.type === "autocomplete" && (ev as AutocompleteEvent).before) {
-    return (ev as AutocompleteEvent).before.length;
+  if (ev.type === "autocomplete") {
+    return (ev as AutocompleteEvent).before?.length ?? 0;
   }
   return null;
 }
@@ -94,6 +93,11 @@ export function createReplaySession(
       // Trigger autocomplete panel — cursor is already positioned
       if (ev.type === "autocomplete" && callbacks.onAutocomplete) {
         callbacks.onAutocomplete(ev as AutocompleteEvent);
+      }
+
+      // Select autocomplete suggestion (arrow up/down navigation)
+      if (ev.type === "autocomplete-selection" && callbacks.onSelectAutocompleteSuggestion) {
+        callbacks.onSelectAutocompleteSuggestion((ev as AutocompleteSelectionEvent).selectedIndex);
       }
 
       // Restore store state from snapshot

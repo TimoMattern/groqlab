@@ -25,6 +25,7 @@ export type FlightEvent =
   | ActionEvent
   | ApiCallEvent
   | AutocompleteEvent
+  | AutocompleteSelectionEvent
   | UserEvent
   | InputEvent;
 
@@ -79,6 +80,14 @@ export interface AutocompleteEvent {
   fieldTypesAfter: Record<string, string>;
   options: { label: string; detail: string }[];
   resolvesTriggered: string[];
+  selectedIndex: number;
+}
+
+export interface AutocompleteSelectionEvent {
+  type: "autocomplete-selection";
+  ts: number;
+  selectedIndex: number;
+  totalOptions: number;
 }
 
 export interface UserEvent {
@@ -115,6 +124,7 @@ export class FlightRecorder {
   private snapshotsPaused = false;
   private startTs: number = 0;
   private _activeQuery = "";
+  private _lastSelectedIndex = -1;
 
   static readonly instance = new FlightRecorder();
 
@@ -258,10 +268,22 @@ export class FlightRecorder {
   }
 
   recordAutocomplete(event: Omit<AutocompleteEvent, "type" | "ts">): void {
+    this._lastSelectedIndex = -1;
     this.pushEvent({
       type: "autocomplete",
       ts: performance.now() - this.startTs,
       ...event,
+    });
+  }
+
+  recordAutocompleteSelect(selectedIndex: number, totalOptions: number): void {
+    if (selectedIndex === this._lastSelectedIndex) return;
+    this._lastSelectedIndex = selectedIndex;
+    this.pushEvent({
+      type: "autocomplete-selection",
+      ts: performance.now() - this.startTs,
+      selectedIndex,
+      totalOptions,
     });
   }
 

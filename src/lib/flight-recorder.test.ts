@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { FlightRecorder } from "./flight-recorder";
-import type { FlightEvent, AutocompleteEvent } from "./flight-recorder";
+import type { FlightEvent, AutocompleteEvent, AutocompleteSelectionEvent } from "./flight-recorder";
 import { useConnectionStore } from "@/stores/connection-store";
 import { useSchemaStore } from "@/stores/schema-store";
 import { useResultStore } from "@/stores/result-store";
@@ -13,6 +13,7 @@ beforeEach(() => {
     timerId: ReturnType<typeof setInterval> | null;
     record: { events: FlightEvent[] };
     startTs: number;
+    _lastSelectedIndex: number;
   };
   fr._enabled = false;
   if (fr.timerId !== null) {
@@ -21,6 +22,7 @@ beforeEach(() => {
   }
   fr.record.events = [];
   fr.startTs = 0;
+  fr._lastSelectedIndex = -1;
 
   // reset stores
   useConnectionStore.setState({
@@ -196,6 +198,7 @@ describe("FlightRecorder", () => {
         fieldTypesAfter: { title: "string" },
         options: [{ label: "post", detail: "document" }],
         resolvesTriggered: [],
+        selectedIndex: 0,
       });
       const acEvts = FlightRecorder.instance
         .export()
@@ -222,6 +225,42 @@ describe("FlightRecorder", () => {
       expect(inputEvts[0].origin).toBe("input.type");
       expect(inputEvts[1].text).toBe("*[_type == \"movie\"]");
       expect(inputEvts[1].cursor).toBe(19);
+    });
+
+    it("records autocomplete selection changes", () => {
+      FlightRecorder.instance.start();
+      FlightRecorder.instance.recordAutocompleteSelect(0, 5);
+      FlightRecorder.instance.recordAutocompleteSelect(1, 5);
+      FlightRecorder.instance.recordAutocompleteSelect(1, 5); // duplicate — should be dropped
+      const selEvts = FlightRecorder.instance
+        .export()
+        .events.filter((e) => e.type === "autocomplete-selection") as AutocompleteSelectionEvent[];
+      expect(selEvts).toHaveLength(2);
+      expect(selEvts[0].selectedIndex).toBe(0);
+      expect(selEvts[0].totalOptions).toBe(5);
+      expect(selEvts[1].selectedIndex).toBe(1);
+    });
+
+    it("resets autocomplete selection tracking when new autocomplete session starts", () => {
+      FlightRecorder.instance.start();
+      FlightRecorder.instance.recordAutocompleteSelect(3, 10);
+      // A new autocomplete session resets the tracking
+      FlightRecorder.instance.recordAutocomplete({
+        before: "*[_type == ",
+        query: "movie",
+        context: { kind: "filter", before: "_type == " },
+        fieldTypesBefore: {},
+        fieldTypesAfter: {},
+        options: [{ label: "movie", detail: "document" }],
+        resolvesTriggered: [],
+        selectedIndex: 0,
+      });
+      // same index as before but new session — should be recorded
+      FlightRecorder.instance.recordAutocompleteSelect(0, 1);
+      const selEvts = FlightRecorder.instance
+        .export()
+        .events.filter((e) => e.type === "autocomplete-selection") as AutocompleteSelectionEvent[];
+      expect(selEvts).toHaveLength(2); // the initial one + the new one after reset
     });
   });
 
