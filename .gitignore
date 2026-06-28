@@ -11,3 +11,5 @@ src-tauri/target/
 .env.*.local
 *.tsbuildinfo
 coverage/
+.groqlabrc
+groqlab.json

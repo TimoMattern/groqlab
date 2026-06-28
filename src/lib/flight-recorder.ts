@@ -4,7 +4,7 @@ import { useResultStore } from "@/stores/result-store";
 import { useHistoryStore } from "@/stores/history-store";
 import { detectContext } from "@/lib/groq/groq-autocomplete";
 import type { CompletionCtx } from "@/lib/groq/groq-autocomplete";
-import type { SchemaField, SchemaType } from "@/lib/sanity-types";
+import type { ConnectionConfig, QueryResult, SchemaField, SchemaType } from "@/lib/sanity-types";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -462,6 +462,79 @@ export class FlightRecorder {
         return true;
       }
 
+      // Headless: Query execution
+      case "query.execute": {
+        const { query, params } = cmd.args as { query: string; params?: Record<string, unknown> };
+        const conn = getActiveConnection();
+        if (!conn) throw new Error("No active connection");
+        const { executeQuery } = await import("@/lib/sanity-api");
+        const result = await executeQuery(conn, query, params);
+        this.recordSnapshot("after-action");
+        return result;
+      }
+
+      // Headless: Connection management
+      case "connection.list": {
+        const connState = useConnectionStore.getState();
+        return {
+          connections: connState.connections,
+          activeId: connState.activeId,
+          statuses: connState.statuses,
+        };
+      }
+
+      case "connection.add": {
+        const { projectId, dataset, name, token } = cmd.args as {
+          projectId: string; dataset: string; name?: string; token?: string;
+        };
+        const id = `${projectId}/${dataset}`;
+        const conn: ConnectionConfig = {
+          id,
+          name: name ?? id,
+          projectId,
+          dataset,
+          token: token ?? "",
+          createdAt: new Date().toISOString(),
+        };
+        useConnectionStore.getState().addConnection(conn);
+        this.recordSnapshot("after-action");
+        return conn;
+      }
+
+      case "connection.setActive": {
+        const { id } = cmd.args as { id: string };
+        useConnectionStore.getState().setActive(id);
+        this.recordSnapshot("after-action");
+        return true;
+      }
+
+      case "connection.test": {
+        const { projectId, dataset } = cmd.args as { projectId: string; dataset: string };
+        const { testConnection } = await import("@/lib/sanity-api");
+        const result = await testConnection(projectId, dataset);
+        this.recordSnapshot("after-action");
+        return result;
+      }
+
+      // Headless: Schema commands
+      case "schema.getTypes": {
+        const conn = getActiveConnection();
+        if (!conn) return [];
+        return useSchemaStore.getState().getTypes(conn.id) ?? [];
+      }
+
+      case "schema.fetch": {
+        const conn = getActiveConnection();
+        if (!conn) throw new Error("No active connection");
+        const { fetchSchema } = await import("@/lib/sanity-api");
+        const types = await fetchSchema(conn);
+        if (types.length > 0) {
+          useSchemaStore.getState().setTypes(conn.id, types);
+        }
+        this.recordSnapshot("after-action");
+        return types;
+      }
+
       default:
         throw new Error(`Unknown command: ${cmd.command}`);
     }
@@ -528,6 +601,17 @@ declare global {
       start: (intervalMs?: number) => void;
       stop: () => void;
       setQuery: (q: string) => void;
+
+      /** Convenience: execute a GROQ query on the active connection */
+      query: (groq: string, params?: Record<string, unknown>) => Promise<QueryResult>;
+      /** Convenience: add and activate a connection */
+      connect: (projectId: string, dataset: string, token?: string) => Promise<ConnectionConfig>;
+      /** Convenience: run autocomplete for text before cursor */
+      autocomplete: (before: string) => Promise<unknown>;
+      /** Convenience: fetch and set schema for active connection */
+      schema: () => Promise<SchemaType[]>;
+      /** Convenience: get current store snapshot */
+      snapshot: () => Promise<object>;
     };
   }
 }
@@ -551,5 +635,26 @@ export function setupFlightGlobal(): void {
     start: (intervalMs?: number) => fr.start(intervalMs),
     stop: () => fr.stop(),
     setQuery: (q: string) => fr.setActiveQuery(q),
+
+    query: (groq, params) =>
+      fr.executeCommand({ id: "", command: "query.execute", args: { query: groq, params }, timestamp: 0 }) as Promise<QueryResult>,
+    connect: (projectId, dataset, token) =>
+      fr.executeCommand({ id: "", command: "connection.add", args: { projectId, dataset, token }, timestamp: 0 })
+        .then((conn) => {
+          const c = conn as ConnectionConfig;
+          return fr.executeCommand({ id: "", command: "connection.setActive", args: { id: c.id }, timestamp: 0 }).then(() => c);
+        }) as Promise<ConnectionConfig>,
+    autocomplete: (before) =>
+      fr.executeCommand({ id: "", command: "autocomplete.trigger", args: { before }, timestamp: 0 }),
+    schema: () =>
+      fr.executeCommand({ id: "", command: "schema.fetch", args: {}, timestamp: 0 }) as Promise<SchemaType[]>,
+    snapshot: () =>
+      Promise.resolve({
+        connectionStore: JSON.parse(JSON.stringify(useConnectionStore.getState(), (_, v) => typeof v === "function" ? undefined : v)),
+        schemaStore: JSON.parse(JSON.stringify(useSchemaStore.getState(), (_, v) => typeof v === "function" ? undefined : v)),
+        resultStore: JSON.parse(JSON.stringify(useResultStore.getState(), (_, v) => typeof v === "function" ? undefined : v)),
+        historyStore: JSON.parse(JSON.stringify(useHistoryStore.getState(), (_, v) => typeof v === "function" ? undefined : v)),
+        activeQuery: fr.getActiveQuery(),
+      }) as Promise<object>,
   };
 }
